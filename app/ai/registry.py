@@ -23,6 +23,7 @@ Usage:
         caption = await vision.analyze_image(image_bytes)
 """
 
+import json
 from typing import Optional
 
 from loguru import logger
@@ -37,40 +38,22 @@ from app.ai.providers.base import (
 )
 
 # ---------------------------------------------------------------------------
-# Provider class mappings — add new providers here
+# Provider class mappings — all capabilities route through LiteLLM
 # ---------------------------------------------------------------------------
 
-def _get_embedding_class(provider: ProviderType) -> type[EmbeddingProvider]:
-    if provider == ProviderType.GOOGLE:
-        from app.ai.providers.google import GoogleEmbedding
-        return GoogleEmbedding
-    elif provider == ProviderType.OPENAI:
-        from app.ai.providers.openai_provider import OpenAIEmbedding
-        return OpenAIEmbedding
-    raise ValueError(f"Unsupported embedding provider: {provider}")
+def _get_embedding_class() -> type[EmbeddingProvider]:
+    from app.ai.providers.litellm_provider import LiteLLMEmbedding
+    return LiteLLMEmbedding
 
 
-def _get_llm_class(provider: ProviderType) -> type[LLMProvider]:
-    if provider == ProviderType.GOOGLE:
-        from app.ai.providers.google import GoogleLLM
-        return GoogleLLM
-    elif provider == ProviderType.OPENAI:
-        from app.ai.providers.openai_provider import OpenAILLM
-        return OpenAILLM
-    elif provider == ProviderType.ANTHROPIC:
-        from app.ai.providers.anthropic_provider import AnthropicLLM
-        return AnthropicLLM
-    raise ValueError(f"Unsupported LLM provider: {provider}")
+def _get_llm_class() -> type[LLMProvider]:
+    from app.ai.providers.litellm_provider import LiteLLMLLM
+    return LiteLLMLLM
 
 
-def _get_vision_class(provider: ProviderType) -> type[VisionProvider]:
-    if provider == ProviderType.GOOGLE:
-        from app.ai.providers.google import GoogleVision
-        return GoogleVision
-    elif provider == ProviderType.OPENAI:
-        from app.ai.providers.openai_provider import OpenAIVision
-        return OpenAIVision
-    raise ValueError(f"Unsupported vision provider: {provider}")
+def _get_vision_class() -> type[VisionProvider]:
+    from app.ai.providers.litellm_provider import LiteLLMVision
+    return LiteLLMVision
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +91,7 @@ class ProviderRegistry:
         """
         config = await self._load_embedding_config(spec_id=spec_id)
         config.extra["task"] = task
-        cls = _get_embedding_class(config.provider)
+        cls = _get_embedding_class()
         return cls(config)
 
     async def get_active_embedding_spec_id(self) -> Optional[str]:
@@ -128,7 +111,7 @@ class ProviderRegistry:
     async def get_llm(self) -> LLMProvider:
         """Get the configured LLM provider."""
         config = await self._load_llm_config()
-        cls = _get_llm_class(config.provider)
+        cls = _get_llm_class()
         return cls(config)
 
     async def get_active_llm_spec_id(self) -> Optional[str]:
@@ -154,7 +137,7 @@ class ProviderRegistry:
         except ValueError:
             logger.debug("No vision provider configured, image analysis disabled")
             return None
-        cls = _get_vision_class(config.provider)
+        cls = _get_vision_class()
         return cls(config)
 
     async def get_active_vision_spec_id(self) -> Optional[str]:
@@ -194,7 +177,7 @@ class ProviderRegistry:
                 results[capability] = (False, f"Not configured: {e}")
                 continue
             try:
-                provider = cls_fn(config.provider)(config)
+                provider = cls_fn()(config)
                 results[capability] = await provider.test_connection()
             except Exception as e:
                 results[capability] = (False, str(e))
@@ -239,15 +222,19 @@ class ProviderRegistry:
             or await svc.get("embedding_api_key")  # legacy fallback
             or ""
         )
-        base_url = await svc.get("embedding_base_url")
+        base_url = await svc.get("embedding_base_url") if spec_id.startswith("custom/") else None
+        model_id = spec.model_id
+        if spec_id.startswith("custom/"):
+            model_id = await svc.get("embedding_custom_model_id") or "custom"
 
         return ProviderConfig(
             provider=ProviderType(spec.provider),
             api_key=api_key,
-            model_id=spec.model_id,
+            model_id=model_id,
             base_url=base_url,
             dimensions=spec.dimension,
             extra={"spec_id": spec.id},
+            spec=spec,
         )
 
     async def _load_llm_config(self) -> ProviderConfig:
@@ -255,10 +242,12 @@ class ProviderRegistry:
         Build a ProviderConfig for the active LLM from LLM_CATALOG.
 
         Resolution: spec_id (new) → legacy provider+model_id derivation.
+        API key uses per-provider key (`llm_api_key__<provider>`) with fallback
+        to the legacy flat `llm_api_key` for in-place upgrades.
         Raises ValueError if no LLM is configured at all.
         """
         from app.ai.llm_catalog import get_spec
-        from app.services.config_service import ConfigService
+        from app.services.config_service import ConfigService, llm_api_key_for
 
         svc = ConfigService(self.db)
         spec_id = await self.get_active_llm_spec_id()
@@ -266,22 +255,45 @@ class ProviderRegistry:
             raise ValueError("No active LLM. Pick one in Settings → LLM.")
         spec = get_spec(spec_id)
 
-        api_key = await svc.get("llm_api_key") or ""
-        base_url = await svc.get("llm_base_url")
+        api_key = (
+            await svc.get(llm_api_key_for(spec.provider))
+            or await svc.get("llm_api_key")  # legacy fallback
+            or ""
+        )
+
+        if spec_id == "custom/bifrost":
+            base_url = await svc.get("llm_bifrost_base_url")
+            model_id = await svc.get("llm_bifrost_model_id") or "custom"
+            fallbacks_raw = await svc.get("llm_bifrost_fallbacks")
+            fallbacks = json.loads(fallbacks_raw) if fallbacks_raw else []
+            extra = {"spec_id": spec.id, "fallbacks": fallbacks}
+        elif spec_id.startswith("custom/"):
+            base_url = await svc.get("llm_base_url")
+            model_id = await svc.get("llm_custom_model_id") or "custom"
+            extra = {"spec_id": spec.id}
+        else:
+            base_url = None
+            model_id = spec.model_id
+            extra = {"spec_id": spec.id}
 
         return ProviderConfig(
             provider=ProviderType(spec.provider),
             api_key=api_key,
-            model_id=spec.model_id,
+            model_id=model_id,
             base_url=base_url,
-            extra={"spec_id": spec.id},
+            extra=extra,
             spec=spec,
         )
 
     async def _load_vision_config(self) -> ProviderConfig:
-        """Build a ProviderConfig for the active vision model from VISION_CATALOG."""
+        """
+        Build a ProviderConfig for the active vision model from VISION_CATALOG.
+
+        API key uses per-provider key (`vision_api_key__<provider>`) with fallback
+        to the legacy flat `vision_api_key` for in-place upgrades.
+        """
         from app.ai.vision_catalog import get_spec
-        from app.services.config_service import ConfigService
+        from app.services.config_service import ConfigService, vision_api_key_for
 
         svc = ConfigService(self.db)
         spec_id = await self.get_active_vision_spec_id()
@@ -289,15 +301,33 @@ class ProviderRegistry:
             raise ValueError("No active vision model. Pick one in Settings → Vision.")
         spec = get_spec(spec_id)
 
-        api_key = await svc.get("vision_api_key") or ""
-        base_url = await svc.get("vision_base_url")
+        api_key = (
+            await svc.get(vision_api_key_for(spec.provider))
+            or await svc.get("vision_api_key")  # legacy fallback
+            or ""
+        )
+
+        if spec_id == "custom/bifrost":
+            base_url = await svc.get("vision_bifrost_base_url")
+            model_id = await svc.get("vision_bifrost_model_id") or "custom"
+            fallbacks_raw = await svc.get("vision_bifrost_fallbacks")
+            fallbacks = json.loads(fallbacks_raw) if fallbacks_raw else []
+            extra = {"spec_id": spec.id, "fallbacks": fallbacks}
+        elif spec_id.startswith("custom/"):
+            base_url = await svc.get("vision_base_url")
+            model_id = await svc.get("vision_custom_model_id") or "custom"
+            extra = {"spec_id": spec.id}
+        else:
+            base_url = None
+            model_id = spec.model_id
+            extra = {"spec_id": spec.id}
 
         return ProviderConfig(
             provider=ProviderType(spec.provider),
             api_key=api_key,
-            model_id=spec.model_id,
+            model_id=model_id,
             base_url=base_url,
-            extra={"spec_id": spec.id},
+            extra=extra,
             spec=spec,
         )
 
