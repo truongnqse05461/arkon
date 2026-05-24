@@ -25,6 +25,9 @@ class ProviderType(str, Enum):
     OLLAMA = "ollama"
     VOYAGE = "voyage"
     COHERE = "cohere"
+    CUSTOM_OPENAI = "custom_openai"
+    CUSTOM_ANTHROPIC = "custom_anthropic"
+    BIFROST = "bifrost"
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +150,7 @@ class VisionProvider(ABC):
         image_data: bytes,
         mime_type: str = "image/jpeg",
         prompt: Optional[str] = None,
+        timeout: int = 90,
     ) -> str:
         """Analyze an image and return a text description."""
         ...
