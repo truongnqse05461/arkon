@@ -63,3 +63,54 @@ def test_bifrost_non_key_fields_are_not_sensitive():
     assert not _is_sensitive("llm_bifrost_base_url")
     assert not _is_sensitive("llm_bifrost_model_id")
     assert not _is_sensitive("llm_bifrost_fallbacks")
+
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+from app.ai.providers.base import ProviderConfig, ProviderType
+from app.ai.providers.litellm_provider import LiteLLMLLM, LiteLLMVision
+
+
+@pytest.mark.asyncio
+async def test_bifrost_llm_injects_extra_body():
+    """LiteLLMLLM passes extra_body with fallbacks for Bifrost provider."""
+    config = ProviderConfig(
+        provider=ProviderType.BIFROST,
+        api_key="bfk-key",
+        model_id="gpt-4o-mini",
+        base_url="https://bifrost.myco.com",
+        extra={"fallbacks": ["anthropic/claude-3-5-sonnet"]},
+    )
+    llm = LiteLLMLLM(config)
+
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = "hello"
+
+    with patch("litellm.acompletion", return_value=mock_response) as mock_call:
+        await llm.generate("Say hi")
+        call_kwargs = mock_call.call_args.kwargs
+        assert call_kwargs.get("extra_body") == {"fallbacks": ["anthropic/claude-3-5-sonnet"]}
+        # _resolve_model(BIFROST, "gpt-4o-mini") → "openai/gpt-4o-mini"
+        assert call_kwargs["model"] == "openai/gpt-4o-mini"
+        assert call_kwargs["base_url"] == "https://bifrost.myco.com"
+
+
+@pytest.mark.asyncio
+async def test_bifrost_llm_no_extra_body_when_no_fallbacks():
+    """LiteLLMLLM does not inject extra_body when fallbacks list is empty."""
+    config = ProviderConfig(
+        provider=ProviderType.BIFROST,
+        api_key="bfk-key",
+        model_id="gpt-4o-mini",
+        base_url="https://bifrost.myco.com",
+        extra={"fallbacks": []},
+    )
+    llm = LiteLLMLLM(config)
+
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = "hello"
+
+    with patch("litellm.acompletion", return_value=mock_response) as mock_call:
+        await llm.generate("Say hi")
+        call_kwargs = mock_call.call_args.kwargs
+        assert "extra_body" not in call_kwargs
