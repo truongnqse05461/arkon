@@ -32,7 +32,9 @@ def _is_sensitive(key: str) -> bool:
             "embedding_api_key", "llm_api_key", "vision_api_key",
             "smtp_password", "webhook_secret",
         }
-        or key.startswith("embedding_api_key__")  # per-provider keys
+        or key.startswith("embedding_api_key__")
+        or key.startswith("llm_api_key__")
+        or key.startswith("vision_api_key__")
     )
 
 
@@ -50,11 +52,16 @@ ACTIVE_EMBEDDING_MODEL_KEY = "active_embedding_model_spec_id"
 ACTIVE_LLM_MODEL_KEY = "active_llm_model_spec_id"
 ACTIVE_VISION_MODEL_KEY = "active_vision_model_spec_id"
 
-# Per-provider embedding API keys: `embedding_api_key__<provider>`. We store
-# one key per provider so admins can switch provider without losing the
-# previously configured key. Encrypted at rest.
+# Per-provider API keys — one key per provider so admins can switch providers
+# without losing previously configured keys. Encrypted at rest.
 def embedding_api_key_for(provider: str) -> str:
     return f"embedding_api_key__{provider}"
+
+def llm_api_key_for(provider: str) -> str:
+    return f"llm_api_key__{provider}"
+
+def vision_api_key_for(provider: str) -> str:
+    return f"vision_api_key__{provider}"
 
 
 # All config keys that can be managed via UI
@@ -63,19 +70,40 @@ ALL_CONFIG_KEYS = [
     ACTIVE_EMBEDDING_MODEL_KEY,  # canonical spec_id, e.g. "openai/text-embedding-3-small"
     "embedding_api_key__google",
     "embedding_api_key__openai",
+    "embedding_api_key__custom_openai",
     "embedding_base_url",        # optional, custom endpoint (Ollama, Azure, proxy)
+    "embedding_custom_model_id",
 
-    # --- LLM (catalog-driven; old llm_provider/llm_model_id kept readable below) ---
+    # --- LLM (catalog-driven; per-provider keys mirror the embedding pattern) ---
     ACTIVE_LLM_MODEL_KEY,        # canonical spec_id from LLM_CATALOG
-    "llm_api_key",               # Provider API key
+    "llm_api_key__google",
+    "llm_api_key__openai",
+    "llm_api_key__anthropic",
+    "llm_api_key__custom_openai",
+    "llm_api_key__custom_anthropic",
+    "llm_api_key__bifrost",
     "llm_base_url",              # Custom endpoint
+    "llm_custom_model_id",       # Custom model ID/name
+    "llm_bifrost_base_url",
+    "llm_bifrost_model_id",
+    "llm_bifrost_fallbacks",
 
-    # --- Vision (catalog-driven; old vision_provider/vision_model_id kept below) ---
+    # --- Vision (catalog-driven; per-provider keys mirror the embedding pattern) ---
     ACTIVE_VISION_MODEL_KEY,     # canonical spec_id from VISION_CATALOG
-    "vision_api_key",            # Provider API key (or empty = same as embedding)
+    "vision_api_key__google",
+    "vision_api_key__openai",
+    "vision_api_key__custom_openai",
+    "vision_api_key__custom_anthropic",
+    "vision_api_key__bifrost",
     "vision_base_url",           # Custom endpoint
+    "vision_custom_model_id",
+    "vision_bifrost_base_url",
+    "vision_bifrost_model_id",
+    "vision_bifrost_fallbacks",
 
-    # --- Deprecated LLM/Vision free-form keys (read-only for backward compat) ---
+    # --- Deprecated single-key fallbacks (read-only for backward compat) ---
+    "llm_api_key",
+    "vision_api_key",
     "llm_provider",
     "llm_model_id",
     "vision_provider",
