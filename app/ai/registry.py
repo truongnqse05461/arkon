@@ -265,7 +265,11 @@ class ProviderRegistry:
             base_url = await svc.get("llm_bifrost_base_url")
             model_id = await svc.get("llm_bifrost_model_id") or "custom"
             fallbacks_raw = await svc.get("llm_bifrost_fallbacks")
-            fallbacks = json.loads(fallbacks_raw) if fallbacks_raw else []
+            try:
+                fallbacks = json.loads(fallbacks_raw) if fallbacks_raw else []
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("llm_bifrost_fallbacks contains invalid JSON, ignoring")
+                fallbacks = []
             extra = {"spec_id": spec.id, "fallbacks": fallbacks}
         elif spec_id.startswith("custom/"):
             base_url = await svc.get("llm_base_url")
@@ -311,7 +315,11 @@ class ProviderRegistry:
             base_url = await svc.get("vision_bifrost_base_url")
             model_id = await svc.get("vision_bifrost_model_id") or "custom"
             fallbacks_raw = await svc.get("vision_bifrost_fallbacks")
-            fallbacks = json.loads(fallbacks_raw) if fallbacks_raw else []
+            try:
+                fallbacks = json.loads(fallbacks_raw) if fallbacks_raw else []
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("vision_bifrost_fallbacks contains invalid JSON, ignoring")
+                fallbacks = []
             extra = {"spec_id": spec.id, "fallbacks": fallbacks}
         elif spec_id.startswith("custom/"):
             base_url = await svc.get("vision_base_url")
