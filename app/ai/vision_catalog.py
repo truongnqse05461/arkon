@@ -75,6 +75,37 @@ VISION_CATALOG: dict[str, VisionModelSpec] = {
         cost_per_1m_input_tokens=0.15,
         cost_per_image=None,
     ),
+    # --- Custom Providers ---
+    "custom/openai": VisionModelSpec(
+        id="custom/openai",
+        provider="custom_openai",
+        model_id="custom",
+        max_image_size_mb=20,
+        label="Custom OpenAI-Compatible Vision",
+        cost_per_1m_input_tokens=None,
+        cost_per_image=None,
+        notes="Uses custom endpoint, API key, and model ID configured below.",
+    ),
+    "custom/anthropic": VisionModelSpec(
+        id="custom/anthropic",
+        provider="custom_anthropic",
+        model_id="custom",
+        max_image_size_mb=20,
+        label="Custom Anthropic-Compatible Vision",
+        cost_per_1m_input_tokens=None,
+        cost_per_image=None,
+        notes="Uses custom endpoint, API key, and model ID configured below.",
+    ),
+    "custom/bifrost": VisionModelSpec(
+        id="custom/bifrost",
+        provider="bifrost",
+        model_id="custom",
+        max_image_size_mb=20,
+        label="Bifrost Gateway Vision",
+        cost_per_1m_input_tokens=None,
+        cost_per_image=None,
+        notes="OpenAI-compatible AI gateway with fallback routing. Configure base URL, Virtual Key, primary model, and optional fallbacks below.",
+    ),
 }
 
 
