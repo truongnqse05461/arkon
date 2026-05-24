@@ -36,12 +36,16 @@ def test_every_spec_has_a_schema_table():
 
 
 def test_spec_id_matches_provider_and_model():
-    """spec.id must equal '<provider>/<model_id>' so the convention stays honest."""
+    """spec.id must equal '<provider>/<model_id>' for standard specs.
+    Custom specs use dimension-qualified IDs (e.g. 'custom/openai-768') with
+    model_id='custom' as a placeholder — the registry overrides model_id from
+    admin config at runtime."""
     for spec_id, spec in EMBEDDING_CATALOG.items():
         assert spec.id == spec_id, "dict key must match spec.id"
-        assert spec.id == f"{spec.provider}/{spec.model_id}", (
-            f"id={spec.id!r} does not match provider/model_id"
-        )
+        if not spec_id.startswith("custom/"):
+            assert spec.id == f"{spec.provider}/{spec.model_id}", (
+                f"id={spec.id!r} does not match provider/model_id"
+            )
 
 
 def test_get_spec_round_trip():
@@ -77,10 +81,14 @@ def test_specs_for_dimension_filters():
 
 
 def test_no_duplicate_provider_model_pairs():
-    """Two specs can't both target the same (provider, model_id) — would cause
-    ambiguous resolution."""
+    """Two non-custom specs can't both target the same (provider, model_id).
+    Custom specs share model_id='custom' by design — they are disambiguated by
+    their dimension-qualified spec_id (e.g. 'custom/openai-768'). The registry
+    overrides model_id from admin config at runtime for all custom entries."""
     seen: set[tuple[str, str]] = set()
     for spec in EMBEDDING_CATALOG.values():
+        if spec.id.startswith("custom/"):
+            continue
         pair = (spec.provider, spec.model_id)
         assert pair not in seen, f"duplicate provider/model_id: {pair}"
         seen.add(pair)
