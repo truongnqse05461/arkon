@@ -477,6 +477,7 @@ def _build_system_prompt(
         "Examples: GIM【entity/gim】, the MAU spec【source/gim-mau-spec-150426-083136】",
         "Always use this exact 【】 bracket style — never bare slugs or Markdown links.",
         "Use the page title or a short descriptive name as the label.",
+        "When including math formulas, wrap them in a ```math code block (never bare LaTeX or $$).",
         "Your answers are scoped to the user's department and workspace access only.",
     ]
     if attachments:
