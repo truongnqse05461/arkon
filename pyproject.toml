@@ -19,7 +19,7 @@ dependencies = [
     "pgvector>=0.3",
     # AI / LLM (provider-agnostic — user picks at runtime)
     "litellm>=1.60.0",
-    "langfuse>=2.0.0",
+    "langfuse>=4.0.0",
     # MCP Server
     "fastmcp>=2.0.0",
     # Auth
