@@ -28,7 +28,7 @@ export function extractCitations(text: string): {
     // Label = last non-whitespace word before 【
     const before = text.slice(0, m.index);
     const labelMatch = before.match(/(\S+)\s*$/);
-    citations.push({ slug, n, label: labelMatch ? labelMatch[1] : slug });
+    citations.push({ slug, n, label: (labelMatch ? labelMatch[1] : slug).replace(/[.,;:!?]+$/, "") });
   }
 
   if (citations.length === 0) {

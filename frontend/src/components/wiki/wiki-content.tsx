@@ -19,7 +19,7 @@ const IMAGE_REF_RE = /image:\/\/([0-9a-fA-F-]{36})/g;
 
 // react-markdown's default URL sanitizer strips unknown schemes. Whitelist
 // `image://<uuid>` so our img renderer receives the original src.
-function wikiUrlTransform(url: string): string {
+export function wikiUrlTransform(url: string): string {
   if (url.startsWith("image://")) return url;
   if (/^(https?:|mailto:|tel:|#|\/|\.\/|\.\.\/)/i.test(url)) return url;
   return "";
