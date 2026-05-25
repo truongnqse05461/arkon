@@ -5,6 +5,7 @@ import { useChat } from "ai/react";
 import type { UIMessage, Message } from "ai";
 import { MessageList } from "./message-list";
 import { ChatInput } from "./chat-input";
+import { CitationPanel } from "./citation-panel";
 import type { Attachment } from "./attachment-picker";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5055";
@@ -30,17 +31,12 @@ export function ChatArea({
   onDeleteSession,
 }: ChatAreaProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [, setActiveCitationSlug] = useState<string | null>(null);
-
-  const handleCitationClick = useCallback((slug: string) => {
-    setActiveCitationSlug(slug);
-  }, []);
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
 
   const { messages, input, setInput, handleSubmit, isLoading } = useChat({
     api: `${API_BASE}/api/chat/sessions/${sessionId}/stream`,
     headers: { Authorization: `Bearer ${getToken()}` },
     body: { attachments: attachments.map(({ label: _label, ...rest }) => rest) },
-    // initialMessages expects Message[] — UIMessage is a superset, safe to cast
     initialMessages: initialMessages as unknown as Message[],
     onFinish: () => {
       setAttachments([]);
@@ -61,6 +57,7 @@ export function ChatArea({
           {sessionTitle}
         </span>
         <button
+          type="button"
           onClick={onDeleteSession}
           className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1 transition-colors"
         >
@@ -75,7 +72,11 @@ export function ChatArea({
       </div>
 
       {/* Messages */}
-      <MessageList messages={messages as UIMessage[]} isLoading={isLoading} onCitationClick={handleCitationClick} />
+      <MessageList
+        messages={messages as UIMessage[]}
+        isLoading={isLoading}
+        onCitationClick={setSelectedSlug}
+      />
 
       {/* Input */}
       <ChatInput
@@ -87,6 +88,9 @@ export function ChatArea({
         onRemoveAttachment={(i) => setAttachments((prev) => prev.filter((_, idx) => idx !== i))}
         isLoading={isLoading}
       />
+
+      {/* Citation slide-out panel */}
+      <CitationPanel slug={selectedSlug} onClose={() => setSelectedSlug(null)} />
     </div>
   );
 }
