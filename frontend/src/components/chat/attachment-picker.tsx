@@ -83,7 +83,7 @@ export function AttachmentPicker({ onAdd }: AttachmentPickerProps) {
         <span className="material-symbols-outlined text-[18px]">attach_file</span>
       </button>
 
-      <div className="absolute bottom-10 left-0 w-72 bg-background border border-border rounded-lg shadow-lg z-50">
+      <div className="absolute bottom-10 right-0 w-72 bg-background border border-border rounded-lg shadow-lg z-50">
         {/* Tabs */}
         <div className="flex border-b border-border">
           {(["wiki", "source"] as const).map((t) => (

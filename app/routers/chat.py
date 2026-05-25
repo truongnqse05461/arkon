@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,8 +65,26 @@ class Attachment(BaseModel):
 
 
 class StreamRequest(BaseModel):
-    message: str
+    # Direct format: { message: "...", attachments: [...] }
+    message: Optional[str] = None
+    # Vercel AI SDK format: { messages: [...], id: "...", attachments: [...] }
+    messages: Optional[list[dict]] = None
+
     attachments: list[Attachment] = []
+
+    @model_validator(mode="after")
+    def resolve_message(self) -> "StreamRequest":
+        if not self.message and self.messages:
+            for msg in reversed(self.messages):
+                if msg.get("role") == "user":
+                    content = msg.get("content", "")
+                    if isinstance(content, str):
+                        self.message = content
+                    elif isinstance(content, list):
+                        texts = [p["text"] for p in content if p.get("type") == "text" and p.get("text")]
+                        self.message = " ".join(texts)
+                    break
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +178,9 @@ async def stream_chat(
     db: AsyncSession = Depends(get_db),
     user: Employee = Depends(get_current_user),
 ):
+    if not req.message:
+        raise HTTPException(422, "No user message found in request")
+
     session = await get_session(db, session_id, user.id)
     if not session:
         raise HTTPException(403, "Session not found or access denied")
