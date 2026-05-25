@@ -153,3 +153,282 @@ CHAT_TOOLS: list[dict] = [
         },
     },
 ]
+
+# ---------------------------------------------------------------------------
+# Scope resolution (mirrors MCP identity)
+# ---------------------------------------------------------------------------
+
+async def _get_scope(
+    db: AsyncSession, employee: Employee
+) -> dict:
+    """Build scope dict from employee for tool filtering."""
+    dept_id = str(employee.department_id) if employee.department_id else None
+
+    from sqlalchemy import select as sa_select
+    from app.database.models import ProjectMember
+    stmt = sa_select(ProjectMember.project_id).where(
+        ProjectMember.employee_id == employee.id
+    )
+    result = await db.execute(stmt)
+    project_ids = [str(r[0]) for r in result.all()]
+
+    allowed_kt: list[str] | None = None
+    if employee.custom_role_id:
+        from sqlalchemy.orm import selectinload
+        from sqlalchemy import select as sa_select2
+        from app.database.models import Employee as Emp
+        emp = (await db.execute(
+            sa_select2(Emp)
+            .where(Emp.id == employee.id)
+            .options(selectinload(Emp.custom_role))
+        )).scalar_one_or_none()
+        if emp and emp.custom_role and emp.custom_role.allowed_knowledge_types:
+            allowed_kt = emp.custom_role.allowed_knowledge_types
+
+    return {
+        "is_admin": employee.role == "admin",
+        "department_id": dept_id,
+        "project_ids": project_ids,
+        "allowed_knowledge_types": allowed_kt,
+        "employee_id": str(employee.id),
+        "allowed_source_ids": None,
+    }
+
+
+def _make_identity(scope: dict):
+    """Build a minimal identity-like object for apply_scope_filter."""
+    import uuid as _uuid
+
+    class _Identity:
+        is_admin = scope["is_admin"]
+        department_id = _uuid.UUID(scope["department_id"]) if scope["department_id"] else None
+        project_ids = scope["project_ids"]
+        allowed_knowledge_types = scope["allowed_knowledge_types"]
+        allowed_source_ids = scope["allowed_source_ids"]
+
+    return _Identity()
+
+
+# ---------------------------------------------------------------------------
+# Tool executor — calls existing wiki/source service functions directly
+# ---------------------------------------------------------------------------
+
+async def execute_tool(
+    tool_name: str,
+    args: dict,
+    employee: Any,
+    db: AsyncSession,
+) -> str:
+    """Execute a Tier 1 KB tool and return its string result."""
+    import uuid as _uuid
+    from app.services import wiki_service
+    from app.services.mcp_auth_service import apply_scope_filter
+
+    if employee is None:
+        return f"[error: no employee context for tool {tool_name}]"
+
+    scope = await _get_scope(db, employee)
+    dept_uuid = _uuid.UUID(scope["department_id"]) if scope["department_id"] else None
+    proj_uuids = [_uuid.UUID(p) for p in scope["project_ids"]]
+    allowed_kt = scope["allowed_knowledge_types"]
+    is_admin = scope["is_admin"]
+
+    try:
+        if tool_name == "search_wiki":
+            registry = ProviderRegistry(db)
+            embedding_provider = await registry.get_embedding(task="search_query")
+            query_embedding = await embedding_provider.embed(args["query"])
+            top_k = min(max(1, args.get("top_k", 10)), 50)
+            hits = await wiki_service.search_pages_semantic(
+                db,
+                query_embedding=query_embedding,
+                top_k=top_k,
+                allowed_kt_slugs=allowed_kt,
+                department_id=dept_uuid,
+                project_ids=proj_uuids or None,
+                all_scopes=is_admin,
+            )
+            if not hits:
+                return f'No wiki pages found for: "{args["query"]}"'
+            lines = [f'Wiki search — {len(hits)} result(s) for: "{args["query"]}"\n']
+            for page, sim in hits:
+                lines.append(f"- `{page.slug}` ({page.page_type}) — {sim:.0%} — **{page.title}**")
+            lines.append("\n_Use read_wiki_page(slug) to read the full page._")
+            return "\n".join(lines)
+
+        elif tool_name == "read_wiki_page":
+            slug = args["slug"]
+            page = await wiki_service.get_page_by_slug(db, slug, allowed_kt_slugs=allowed_kt)
+            if not page and dept_uuid:
+                page = await wiki_service.get_page_by_slug(
+                    db, slug, allowed_kt_slugs=allowed_kt,
+                    scope_type="department", scope_id=dept_uuid,
+                )
+            if not page and proj_uuids:
+                for pid in proj_uuids:
+                    page = await wiki_service.get_page_by_slug(
+                        db, slug, allowed_kt_slugs=allowed_kt,
+                        scope_type="project", scope_id=pid,
+                    )
+                    if page:
+                        break
+            if not page:
+                return f"Wiki page not found or out of scope: `{slug}`"
+            backlinks = await wiki_service.get_backlinks(db, slug, page.scope_type, page.scope_id)
+            body = page.content_md or ""
+            if backlinks:
+                body = body.rstrip() + "\n\n## Backlinks\n" + "\n".join(f"- `{s}`" for s in sorted(backlinks))
+            return body
+
+        elif tool_name == "read_wiki_index":
+            page = await wiki_service.get_page_by_slug(db, wiki_service.INDEX_SLUG)
+            return page.content_md if page else "_(wiki index not initialized yet)_"
+
+        elif tool_name == "list_wiki_pages":
+            pages = await wiki_service.list_pages(
+                db,
+                page_type=args.get("page_type"),
+                knowledge_type_slug=args.get("knowledge_type"),
+                allowed_kt_slugs=allowed_kt,
+                limit=args.get("limit", 50),
+                offset=args.get("offset", 0),
+                department_id=dept_uuid,
+                project_ids=proj_uuids or None,
+                all_scopes=is_admin,
+            )
+            if not pages:
+                return "No wiki pages match the filters."
+            lines = [f"**Wiki pages — {len(pages)} result(s)**\n"]
+            for p in pages:
+                lines.append(f"- `{p.slug}` ({p.page_type}) — **{p.title}**")
+            return "\n".join(lines)
+
+        elif tool_name == "list_sources":
+            from sqlalchemy import select as sa_select
+            from app.database.models import KnowledgeType, Source
+            stmt = (
+                sa_select(Source)
+                .order_by(Source.created_at.desc())
+            )
+            if args.get("status", "ready") != "all":
+                stmt = stmt.where(Source.status == args.get("status", "ready"))
+            if args.get("knowledge_type"):
+                kt_id = (await db.execute(
+                    sa_select(KnowledgeType.id).where(KnowledgeType.slug == args["knowledge_type"])
+                )).scalar()
+                if kt_id:
+                    stmt = stmt.where(Source.knowledge_type_id == kt_id)
+            stmt = apply_scope_filter(stmt, _make_identity(scope)).limit(args.get("limit", 20))
+            sources = (await db.execute(stmt)).scalars().all()
+            if not sources:
+                return "No documents found."
+            lines = [f"**{len(sources)} document(s)**\n"]
+            for s in sources:
+                lines.append(f"- **{s.title or s.file_name or 'Untitled'}** (ID: `{s.id}`)")
+            return "\n".join(lines)
+
+        elif tool_name == "get_source":
+            from sqlalchemy import select as sa_select
+            from sqlalchemy.orm import selectinload
+            from app.database.models import Source
+            try:
+                sid = _uuid.UUID(args["source_id"])
+            except ValueError:
+                return f"Invalid source ID: {args['source_id']}"
+            source = (await db.execute(
+                sa_select(Source).where(Source.id == sid)
+                .options(selectinload(Source.knowledge_type), selectinload(Source.contributor))
+            )).scalar_one_or_none()
+            if not source:
+                return f"Source not found: {args['source_id']}"
+            kt_label = source.knowledge_type.name if source.knowledge_type else "Uncategorized"
+            return f"# {source.title or source.file_name or 'Untitled'}\n- **ID:** `{source.id}`\n- **Knowledge type:** {kt_label}\n- **Status:** {source.status}"
+
+        elif tool_name == "get_source_outline":
+            from sqlalchemy import select as sa_select
+            from app.database.models import Source
+            try:
+                sid = _uuid.UUID(args["source_id"])
+            except ValueError:
+                return f"Invalid source ID: {args['source_id']}"
+            source = await db.get(Source, sid)
+            if not source:
+                return f"Source not found: {args['source_id']}"
+            outline = source.outline_json or []
+            if not outline:
+                return "_(no outline)_"
+            lines = ["# Outline\n"]
+            def _walk(nodes: list[dict]):
+                for n in nodes:
+                    indent = "  " * max(0, n.get("level", 1) - 1)
+                    page = n.get("page")
+                    lines.append(f"{indent}- {n.get('title', '')}" + (f" (page {page})" if page else ""))
+                    if n.get("children"):
+                        _walk(n["children"])
+            _walk(outline)
+            return "\n".join(lines)
+
+        elif tool_name == "get_source_pages":
+            from app.database.models import Source
+            from app.services.source_outline import parse_page_range, slice_pages_by_range
+            try:
+                sid = _uuid.UUID(args["source_id"])
+            except ValueError:
+                return f"Invalid source ID: {args['source_id']}"
+            source = await db.get(Source, sid)
+            if not source:
+                return f"Source not found: {args['source_id']}"
+            page_nums = parse_page_range(args["pages"])
+            if not page_nums:
+                return f"Invalid page range: {args['pages']!r}"
+            slices = slice_pages_by_range(source.full_text or "", source.page_offsets or [], page_nums)
+            if not slices:
+                return f"No content for pages: {page_nums}"
+            return "\n\n".join(f"--- page {s['page']} ---\n{s['content']}" for s in slices)
+
+        elif tool_name == "list_knowledge_types":
+            from sqlalchemy import func as sqfunc, select as sa_select
+            from app.database.models import KnowledgeType, Source
+            rows = (await db.execute(
+                sa_select(KnowledgeType, sqfunc.count(Source.id).label("doc_count"))
+                .outerjoin(Source, (Source.knowledge_type_id == KnowledgeType.id) & (Source.status == "ready"))
+                .group_by(KnowledgeType.id)
+                .order_by(KnowledgeType.sort_order, KnowledgeType.name)
+            )).all()
+            if not rows:
+                return "No knowledge types defined."
+            lines = ["**Knowledge Types**\n"]
+            for kt, doc_count in rows:
+                if allowed_kt and kt.slug not in allowed_kt:
+                    continue
+                lines.append(f"- **{kt.name}** (slug: `{kt.slug}`, {doc_count} doc(s))")
+            return "\n".join(lines) if len(lines) > 1 else "No accessible knowledge types."
+
+        elif tool_name == "get_knowledge_type_docs":
+            from sqlalchemy import select as sa_select
+            from app.database.models import KnowledgeType, Source
+            kt = (await db.execute(
+                sa_select(KnowledgeType).where(KnowledgeType.slug == args["knowledge_type_slug"])
+            )).scalar_one_or_none()
+            if not kt:
+                return f"Knowledge type '{args['knowledge_type_slug']}' not found."
+            stmt = (
+                sa_select(Source)
+                .where(Source.knowledge_type_id == kt.id, Source.status == "ready")
+                .order_by(Source.created_at.desc())
+            )
+            stmt = apply_scope_filter(stmt, _make_identity(scope)).limit(args.get("limit", 10))
+            sources = (await db.execute(stmt)).scalars().all()
+            if not sources:
+                return f"No documents for **{kt.name}**"
+            lines = [f"**{kt.name}** — {len(sources)} document(s)\n"]
+            for s in sources:
+                lines.append(f"- **{s.title or s.file_name or 'Untitled'}** (ID: `{s.id}`)")
+            return "\n".join(lines)
+
+        else:
+            return f"[error: unknown tool '{tool_name}']"
+
+    except Exception as e:
+        logger.error(f"Tool {tool_name} failed: {e}")
+        return f"[tool error: {e}]"
