@@ -7,6 +7,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import katex from "katex";
 import { ToolCallRow } from "./tool-call-row";
 import { extractCitations, type Citation } from "./citation-utils";
 
@@ -58,6 +59,19 @@ export function MessageBubble({ message, onCitationClick }: MessageBubbleProps) 
   const isUser = message.role === "user";
 
   const markdownComponents = useMemo(() => ({
+    code({ className, children }: { className?: string; children?: ReactNode }) {
+      if (className === "language-math") {
+        const tex = String(children).trim();
+        return (
+          <span
+            dangerouslySetInnerHTML={{
+              __html: katex.renderToString(tex, { throwOnError: false, displayMode: true }),
+            }}
+          />
+        );
+      }
+      return <code className={className}>{children}</code>;
+    },
     sup({ node, children }: { node?: unknown; children?: ReactNode }) {
       if (!node || typeof node !== "object" || (node as { type?: string }).type !== "element") {
         return <sup>{children}</sup>;
