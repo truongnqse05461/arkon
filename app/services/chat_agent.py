@@ -447,7 +447,11 @@ def _sse_tool_call(tool_call_id: str, tool_name: str, args: dict) -> str:
 
 
 def _sse_tool_result(tool_call_id: str, result: str) -> str:
-    return f"b:{json.dumps({'toolCallId': tool_call_id, 'result': result})}\n"
+    return f"a:{json.dumps({'toolCallId': tool_call_id, 'result': result})}\n"
+
+
+def _sse_finish_step(finish_reason: str = "tool-calls", is_continued: bool = False) -> str:
+    return f"e:{json.dumps({'finishReason': finish_reason, 'isContinued': is_continued})}\n"
 
 
 def _sse_finish(finish_reason: str = "stop") -> str:
@@ -469,7 +473,9 @@ def _build_system_prompt(
     lines = [
         "You are a helpful knowledge base assistant for this organization.",
         "Answer questions by searching and reading the knowledge base.",
-        "Always cite page slugs when referencing wiki pages.",
+        "When citing wiki pages or sources, format citations inline as: label【slug】",
+        "Examples: GIM【entity/gim】, the MAU spec【source/gim-mau-spec-150426-083136】",
+        "Always use this exact 【】 bracket style — never bare slugs or Markdown links.",
         "Your answers are scoped to the user's department and workspace access only.",
     ]
     if attachments:
@@ -581,6 +587,7 @@ async def stream_agent_response(
                 yield _sse_tool_result(tc_obj.id, result)
                 tool_results.append((tc_obj.id, tc_obj.name, result))
 
+            yield _sse_finish_step("tool-calls")
             messages.append(tool_results_message(tool_results))
 
         else:
