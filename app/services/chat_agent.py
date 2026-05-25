@@ -318,7 +318,7 @@ async def execute_tool(
                 )).scalar()
                 if kt_id:
                     stmt = stmt.where(Source.knowledge_type_id == kt_id)
-            stmt = apply_scope_filter(stmt, _make_identity(scope)).limit(args.get("limit", 20))
+            stmt = apply_scope_filter(stmt, _make_identity(scope)).limit(args.get("limit", 20)).offset(args.get("offset", 0))
             sources = (await db.execute(stmt)).scalars().all()
             if not sources:
                 return "No documents found."
@@ -549,7 +549,7 @@ async def stream_agent_response(
                 for tc_delta in delta.tool_calls:
                     idx = tc_delta.index
                     if idx not in pending_calls:
-                        pending_calls[idx] = {"id": tc_delta.id or "", "name": "", "arguments_str": ""}
+                        pending_calls[idx] = {"id": tc_delta.id or str(uuid.uuid4()), "name": "", "arguments_str": ""}
                     if tc_delta.id:
                         pending_calls[idx]["id"] = tc_delta.id
                     if getattr(tc_delta, "function", None):
