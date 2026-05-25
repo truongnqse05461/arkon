@@ -476,7 +476,7 @@ def _build_system_prompt(
         "When citing wiki pages or sources, format citations inline as: label【slug】",
         "Examples: GIM【entity/gim】, the MAU spec【source/gim-mau-spec-150426-083136】",
         "Always use this exact 【】 bracket style — never bare slugs or Markdown links.",
-        "Use the page title or a short descriptive name as the label.",
+        "For source citations use source/{id} as the slug and the source title as the label.",
         "When including math formulas, wrap them in a ```math code block (never bare LaTeX or $$).",
         "Your answers are scoped to the user's department and workspace access only.",
     ]
@@ -486,9 +486,30 @@ def _build_system_prompt(
             if a["type"] == "wiki":
                 lines.append(f'- Wiki page: call read_wiki_page("{a["slug"]}")')
             elif a["type"] == "source":
-                lines.append(f'- Source document: call get_source("{a["id"]}")')
+                title = a.get("title") or a["id"]
+                lines.append(f'- Source document (title: "{title}"): call get_source("{a["id"]}")')
+                lines.append(f'  Cite it as: {title}【source/{a["id"]}】')
         lines.append("Only call search_wiki if these items don't fully answer the question.")
     return "\n".join(lines)
+
+
+async def _enrich_source_attachments(db: AsyncSession, attachments: list[dict]) -> list[dict]:
+    """Fetch titles for source attachments so the agent can use them in citation labels."""
+    from sqlalchemy import select
+    from app.database.models import Source
+
+    enriched = []
+    for a in attachments:
+        if a["type"] == "source" and "title" not in a:
+            try:
+                sid = uuid.UUID(a["id"])
+                row = (await db.execute(select(Source.title, Source.file_name).where(Source.id == sid))).first()
+                if row:
+                    a = {**a, "title": row.title or row.file_name or a["id"]}
+            except Exception:
+                pass
+        enriched.append(a)
+    return enriched
 
 
 async def stream_agent_response(
@@ -507,6 +528,7 @@ async def stream_agent_response(
     llm = await registry.get_llm()
 
     scope = await _get_scope(db, employee)
+    attachments = await _enrich_source_attachments(db, attachments)
     system_prompt = _build_system_prompt(scope, attachments)
 
     messages: list[dict] = list(history)
