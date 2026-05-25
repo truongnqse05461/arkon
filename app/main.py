@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app.config import settings
+from app.ai.tracing import configure_langfuse_tracing
 from app.mcp.server import create_mcp_server
 
 # Create the MCP server and its HTTP app (lifespan must be composed with FastAPI)
@@ -70,6 +71,12 @@ async def lifespan(app: FastAPI):
             logger.success("MinIO bucket ready")
         except Exception as e:
             logger.warning(f"MinIO not available yet: {e}")
+
+        # Configure Langfuse tracing if env vars are set
+        if configure_langfuse_tracing():
+            logger.success("Langfuse tracing enabled")
+        else:
+            logger.info("Langfuse tracing not configured (LANGFUSE_PUBLIC_KEY not set)")
 
         # Seed default admin if no admin exists yet
         await seed_default_admin()
