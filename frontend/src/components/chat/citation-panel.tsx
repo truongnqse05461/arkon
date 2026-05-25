@@ -18,13 +18,15 @@ export function CitationPanel({ slug, onClose }: CitationPanelProps) {
 
   useEffect(() => {
     if (!slug) return;
+    let isMounted = true;
     setPage(null);
     setError(null);
     setLoading(true);
     api<WikiPageDetail>(`/api/wiki/pages/${encodeURIComponent(slug)}`)
-      .then(setPage)
-      .catch(() => setError("Page not found or not accessible."))
-      .finally(() => setLoading(false));
+      .then((data) => { if (isMounted) setPage(data); })
+      .catch(() => { if (isMounted) setError("Page not found or not accessible."); })
+      .finally(() => { if (isMounted) setLoading(false); });
+    return () => { isMounted = false; };
   }, [slug]);
 
   if (!slug) return null;
@@ -39,13 +41,19 @@ export function CitationPanel({ slug, onClose }: CitationPanelProps) {
       />
 
       {/* Panel */}
-      <div className="fixed right-0 top-0 z-50 h-full w-[480px] max-w-full bg-background border-l border-border shadow-xl flex flex-col">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Wiki page: ${slug}`}
+        className="fixed right-0 top-0 z-50 h-full w-[480px] max-w-full bg-background border-l border-border shadow-xl flex flex-col"
+      >
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
           <span className="text-xs text-muted-foreground font-mono flex-1 truncate">
             {slug.split("/").join(" / ")}
           </span>
           <button
+            type="button"
             onClick={onClose}
             className="text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Close panel"
@@ -70,7 +78,7 @@ export function CitationPanel({ slug, onClose }: CitationPanelProps) {
             </div>
           )}
           {error && (
-            <p className="text-sm text-muted-foreground">{error}</p>
+            <p className="text-sm text-destructive">{error}</p>
           )}
           {page && (
             <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none">
