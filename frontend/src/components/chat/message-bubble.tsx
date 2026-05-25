@@ -115,7 +115,7 @@ export function MessageBubble({ message, onCitationClick }: MessageBubbleProps) 
           return (
             <div
               key={i}
-              className="max-w-[85%] bg-muted/40 rounded-[2px_10px_10px_10px] px-3 py-2 text-sm leading-relaxed prose prose-sm prose-neutral dark:prose-invert"
+              className="max-w-[85%] bg-muted/40 rounded-[2px_10px_10px_10px] px-3 py-2 text-sm leading-relaxed prose prose-sm prose-neutral dark:prose-invert [&>*:last-child]:!mb-0"
             >
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
