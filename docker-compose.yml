@@ -4,6 +4,7 @@ x-backend: &backend
     context: .
     dockerfile: Dockerfile
   image: arkon-backend:latest
+  # Langfuse tracing: add LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST to .env.docker to enable
   env_file: [.env.docker]
   restart: always
   depends_on:
