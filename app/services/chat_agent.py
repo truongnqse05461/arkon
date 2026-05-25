@@ -432,3 +432,159 @@ async def execute_tool(
     except Exception as e:
         logger.error(f"Tool {tool_name} failed: {e}")
         return f"[tool error: {e}]"
+
+
+# ---------------------------------------------------------------------------
+# Vercel AI SDK data stream protocol encoder
+# ---------------------------------------------------------------------------
+
+def _sse_text(token: str) -> str:
+    return f"0:{json.dumps(token)}\n"
+
+
+def _sse_tool_call(tool_call_id: str, tool_name: str, args: dict) -> str:
+    return f"9:{json.dumps({'toolCallId': tool_call_id, 'toolName': tool_name, 'args': args})}\n"
+
+
+def _sse_tool_result(tool_call_id: str, result: str) -> str:
+    return f"b:{json.dumps({'toolCallId': tool_call_id, 'result': result})}\n"
+
+
+def _sse_finish(finish_reason: str = "stop") -> str:
+    return f"d:{json.dumps({'finishReason': finish_reason})}\n"
+
+
+def _sse_error(message: str) -> str:
+    return f"3:{json.dumps(message)}\n"
+
+
+# ---------------------------------------------------------------------------
+# Streaming agentic loop
+# ---------------------------------------------------------------------------
+
+def _build_system_prompt(
+    scope: dict,
+    attachments: list[dict],
+) -> str:
+    lines = [
+        "You are a helpful knowledge base assistant for this organization.",
+        "Answer questions by searching and reading the knowledge base.",
+        "Always cite page slugs when referencing wiki pages.",
+        "Your answers are scoped to the user's department and workspace access only.",
+    ]
+    if attachments:
+        lines.append("\nThe user has pinned the following context items — read these first:")
+        for a in attachments:
+            if a["type"] == "wiki":
+                lines.append(f'- Wiki page: call read_wiki_page("{a["slug"]}")')
+            elif a["type"] == "source":
+                lines.append(f'- Source document: call get_source("{a["id"]}")')
+        lines.append("Only call search_wiki if these items don't fully answer the question.")
+    return "\n".join(lines)
+
+
+async def stream_agent_response(
+    db: AsyncSession,
+    employee: Employee,
+    history: list[dict],
+    user_message: str,
+    attachments: list[dict],
+    max_steps: int = 8,
+) -> AsyncGenerator[str, None]:
+    """
+    Run the agentic loop and yield Vercel AI SDK data stream protocol lines.
+    History is the existing session messages in neutral format (role/content dicts).
+    """
+    registry = ProviderRegistry(db)
+    llm = await registry.get_llm()
+
+    scope = await _get_scope(db, employee)
+    system_prompt = _build_system_prompt(scope, attachments)
+
+    messages: list[dict] = list(history)
+    messages.append({"role": "user", "content": user_message})
+
+    from app.ai.providers.litellm_provider import LiteLLMLLM, _resolve_model, _bifrost_extra_body
+    assert isinstance(llm, LiteLLMLLM), "Chat agent requires a LiteLLMLLM provider"
+    model = _resolve_model(llm.config.provider, llm.config.model_id)
+    base_kwargs: dict = {
+        "model": model,
+        "api_key": llm.config.api_key or None,
+        "base_url": llm.config.base_url or None,
+        "temperature": 0.2,
+        "stream": True,
+        "tools": CHAT_TOOLS,
+    }
+    extra_body = _bifrost_extra_body(llm.config)
+    if extra_body:
+        base_kwargs["extra_body"] = extra_body
+
+    step = 0
+    while step < max_steps:
+        step += 1
+
+        formatted = [{"role": "system", "content": system_prompt}] + neutral_to_openai_messages(messages)
+
+        try:
+            response = await litellm.acompletion(messages=formatted, **base_kwargs)
+        except Exception as e:
+            yield _sse_error(f"LLM error: {e}")
+            return
+
+        accumulated_text = ""
+        pending_calls: dict[int, dict] = {}
+        finish_reason: str | None = None
+
+        async for chunk in response:
+            choice = chunk.choices[0]
+            delta = choice.delta
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+
+            if delta.content:
+                accumulated_text += delta.content
+                yield _sse_text(delta.content)
+
+            if getattr(delta, "tool_calls", None):
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in pending_calls:
+                        pending_calls[idx] = {"id": tc_delta.id or "", "name": "", "arguments_str": ""}
+                    if tc_delta.id:
+                        pending_calls[idx]["id"] = tc_delta.id
+                    if getattr(tc_delta, "function", None):
+                        if tc_delta.function.name:
+                            pending_calls[idx]["name"] += tc_delta.function.name
+                        if tc_delta.function.arguments:
+                            pending_calls[idx]["arguments_str"] += tc_delta.function.arguments
+
+        if finish_reason == "tool_calls" and pending_calls:
+            tool_call_objs = []
+            for idx in sorted(pending_calls.keys()):
+                tc = pending_calls[idx]
+                try:
+                    args = json.loads(tc["arguments_str"]) if tc["arguments_str"] else {}
+                except json.JSONDecodeError:
+                    args = {}
+                tool_call_objs.append(ToolCall(id=tc["id"], name=tc["name"], arguments=args))
+
+            messages.append({
+                "role": "assistant",
+                "content": accumulated_text or None,
+                "tool_calls": tool_call_objs,
+            })
+
+            tool_results = []
+            for tc_obj in tool_call_objs:
+                yield _sse_tool_call(tc_obj.id, tc_obj.name, tc_obj.arguments)
+                result = await execute_tool(tc_obj.name, tc_obj.arguments, employee, db)
+                yield _sse_tool_result(tc_obj.id, result)
+                tool_results.append((tc_obj.id, tc_obj.name, result))
+
+            messages.append(tool_results_message(tool_results))
+
+        else:
+            yield _sse_finish("stop")
+            return
+
+    yield _sse_finish("stop")
