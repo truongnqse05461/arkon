@@ -4,6 +4,8 @@ import React from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import {
   Table,
   TableBody,
@@ -144,7 +146,8 @@ export function WikiContent({
 
       <div className="prose-wiki">
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex]}
           urlTransform={wikiUrlTransform}
           components={{
             h1: ({ children }) => (
