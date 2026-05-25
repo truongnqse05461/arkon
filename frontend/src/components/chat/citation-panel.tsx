@@ -1,11 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { api } from "@/lib/api";
 import type { WikiPageDetail } from "@/types/wiki";
-import { preprocessWikilinks, wikiUrlTransform } from "@/components/wiki/wiki-content";
+import { WikiContent } from "@/components/wiki/wiki-content";
 
 type CitationPanelProps = {
   slug: string | null;
@@ -82,15 +80,7 @@ export function CitationPanel({ slug, onClose }: CitationPanelProps) {
             <p className="text-sm text-destructive">{error}</p>
           )}
           {page && (
-            <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none">
-              <h1 className="text-base font-semibold mb-3">{page.title}</h1>
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                urlTransform={wikiUrlTransform}
-              >
-                {preprocessWikilinks(page.content_md)}
-              </ReactMarkdown>
-            </div>
+            <WikiContent markdown={page.content_md} />
           )}
         </div>
       </div>
