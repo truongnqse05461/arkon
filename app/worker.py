@@ -987,6 +987,9 @@ async def caption_images_task(ctx: dict, source_id: str):
 
     MAX_CONCURRENCY = 4
     PER_IMAGE_TIMEOUT = 120
+    # LiteLLM timeout is kept below the wait_for cap so the provider raises
+    # litellm.Timeout (retriable) before asyncio.TimeoutError (not retriable).
+    LITELLM_TIMEOUT = 90
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
     total = len(image_records)
 
@@ -1002,7 +1005,9 @@ async def caption_images_task(ctx: dict, source_id: str):
                     "'Based on the image' or similar filler phrases."
                 )
                 caption = await asyncio.wait_for(
-                    vision_provider.analyze_image(img_bytes, content_type, prompt=vision_prompt),
+                    vision_provider.analyze_image(
+                        img_bytes, content_type, prompt=vision_prompt, timeout=LITELLM_TIMEOUT
+                    ),
                     timeout=PER_IMAGE_TIMEOUT,
                 )
                 # Each image gets its own session — no concurrent session access.

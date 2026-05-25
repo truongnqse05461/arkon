@@ -45,6 +45,8 @@ export function EmbeddingSettingsCard() {
   // /api/settings; the bullet character means "key already saved server-side".
   const [maskedKeys, setMaskedKeys] = useState<Record<string, string>>({});
   const [apiKey, setApiKey] = useState("");
+  const [customModelId, setCustomModelId] = useState("");
+  const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -84,6 +86,12 @@ export function EmbeddingSettingsCard() {
         if (typeof v === "string" && v.length > 0) masked[provider] = v;
       }
       setMaskedKeys(masked);
+
+      const cId = settings["embedding_custom_model_id"];
+      const bUrl = settings["embedding_base_url"];
+      setCustomModelId(typeof cId === "string" ? cId : "");
+      setCustomBaseUrl(typeof bUrl === "string" ? bUrl : "");
+
       if (!selected) setSelected(c.active_spec_id ?? c.specs[0]?.id ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load embedding catalog");
@@ -102,6 +110,7 @@ export function EmbeddingSettingsCard() {
   const selectedSpec = catalog?.specs.find((s) => s.id === selected) ?? null;
   const job = status?.current_job ?? null;
   const jobBusy = job && (job.status === "pending" || job.status === "running");
+  const isCustom = !!selectedSpec?.id.startsWith("custom/");
   const isActiveSelected = selectedSpec?.id === catalog?.active_spec_id;
   const willSwitch = !!selectedSpec && !isActiveSelected;
   // The current input value is "the saved masked one" if it contains the
@@ -111,24 +120,34 @@ export function EmbeddingSettingsCard() {
   const canSave =
     !!selectedSpec &&
     !jobBusy &&
-    (hasNewKey || (willSwitch && selectedSpec.api_key_configured));
+    (!isCustom || (customModelId.trim().length > 0 && customBaseUrl.trim().length > 0)) &&
+    (
+      hasNewKey ||
+      (willSwitch && selectedSpec.api_key_configured) ||
+      isCustom
+    );
 
   async function handleSave() {
     if (!selectedSpec) return;
     setSaving(true);
     setError("");
     try {
-      // 1. Save API key for this provider only if user typed a new one.
+      const settingsUpdates: Record<string, string> = {};
       if (hasNewKey) {
+        settingsUpdates[`embedding_api_key__${selectedSpec.provider}`] = apiKey.trim();
+      }
+      if (isCustom) {
+        settingsUpdates["embedding_custom_model_id"] = customModelId.trim();
+        settingsUpdates["embedding_base_url"] = customBaseUrl.trim();
+      }
+
+      if (Object.keys(settingsUpdates).length > 0) {
         await api("/api/settings", {
           method: "PUT",
-          body: {
-            settings: {
-              [`embedding_api_key__${selectedSpec.provider}`]: apiKey.trim(),
-            },
-          },
+          body: { settings: settingsUpdates },
         });
       }
+
       // 2. Trigger switch if the selected model differs from active.
       if (willSwitch) {
         await api("/api/settings/embeddings/switch", {
@@ -228,7 +247,7 @@ export function EmbeddingSettingsCard() {
                 onChange={() => setSelected(spec.id)}
                 disabled={!!jobBusy}
               />
-              <span className="text-sm font-medium flex-1">{spec.model_id}</span>
+              <span className="text-sm font-medium flex-1">{spec.label}</span>
               <span className="text-xs text-muted-foreground">{spec.provider}</span>
               {isActive && (
                 <span className="text-[10px] uppercase tracking-wide bg-green-500/15 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded">
@@ -242,26 +261,53 @@ export function EmbeddingSettingsCard() {
 
       {/* API key */}
       {selectedSpec && (
-        <div className="mb-4 flex flex-col gap-1.5">
-          <Label className="text-xs">
-            API key for {selectedSpec.provider}
-            {selectedSpec.api_key_configured && (
-              <span className="ml-2 text-green-600 dark:text-green-400">✓ saved</span>
-            )}
-          </Label>
-          <Input
-            type={isMaskedKey ? "text" : "password"}
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            onFocus={() => {
-              if (isMaskedKey) setApiKey("");
-            }}
-            placeholder={
-              selectedSpec.api_key_configured ? "Replace existing key…" : "Paste API key"
-            }
-            className="bg-background"
-          />
-        </div>
+        <>
+          {selectedSpec.id.startsWith("custom/") && (
+            <>
+              <div className="mb-4 flex flex-col gap-1.5">
+                <Label className="text-xs">Custom Model ID / Name</Label>
+                <Input
+                  type="text"
+                  value={customModelId}
+                  onChange={(e) => setCustomModelId(e.target.value)}
+                  placeholder="e.g. text-embedding-3-small"
+                  className="bg-background"
+                />
+              </div>
+              <div className="mb-4 flex flex-col gap-1.5">
+                <Label className="text-xs">API Base URL</Label>
+                <Input
+                  type="text"
+                  value={customBaseUrl}
+                  onChange={(e) => setCustomBaseUrl(e.target.value)}
+                  placeholder="e.g. http://localhost:8080/v1"
+                  className="bg-background"
+                />
+              </div>
+            </>
+          )}
+
+          <div className="mb-4 flex flex-col gap-1.5">
+            <Label className="text-xs">
+              API key for {selectedSpec.provider}
+              {selectedSpec.api_key_configured && (
+                <span className="ml-2 text-green-600 dark:text-green-400">✓ saved</span>
+              )}
+            </Label>
+            <Input
+              type={isMaskedKey ? "text" : "password"}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              onFocus={() => {
+                if (isMaskedKey) setApiKey("");
+              }}
+              placeholder={
+                selectedSpec.api_key_configured ? "Replace existing key…" : "Paste API key"
+              }
+              className="bg-background"
+            />
+          </div>
+        </>
       )}
 
       {/* Single Save button */}

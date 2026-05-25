@@ -24,6 +24,20 @@ In most organizations, AI adoption is fragmented. Employees copy-paste documents
 
 ---
 
+## 📚 Documentation
+
+Detailed documentation for Arkon is organized into the following guides:
+
+* 📋 **[Project Overview & PDR](docs/project-overview-pdr.md)** — High-level goals, features, target audience, and key requirements.
+* 📁 **[Codebase Summary](docs/codebase-summary.md)** — File indexes, directory structures, and lines-of-code (LOC) reports.
+* 🐍 **[Code Standards](docs/code-standards.md)** — Backend Python patterns, frontend React structures, and coding conventions.
+* 🏗️ **[System Architecture](docs/system-architecture.md)** — Service decopuling, database schemas, and request flow charts.
+* 🚀 **[Deployment Guide](docs/deployment-guide.md)** — Production setups with Docker Compose, Nginx SSL configs, and local dev guides.
+* 🎨 **[Design System Principles](docs/design-system/design-principles.md)** — Sahara Design System colors, typography, and styling tokens.
+* 🗺️ **[Project Roadmap](docs/project-roadmap.md)** — Completed features and upcoming development milestones.
+
+---
+
 ## ✨ Key Features
 
 ### 🧠 Intelligent Knowledge Wiki - the MRP Pipeline
@@ -120,7 +134,7 @@ Arkon runs **7 Docker containers** (PostgreSQL + pgvector, Redis, MinIO, FastAPI
 > - **RAM** is the primary bottleneck — the MRP pipeline workers load large LLM context windows into memory during wiki compilation.
 > - **Storage** scales with your document corpus — pgvector indexes, MinIO file storage, and PostgreSQL WAL logs are the main consumers.
 > - All AI inference happens externally (Anthropic / Google / OpenAI APIs), so **GPU is not required**.
-> - A reverse proxy (Nginx / Caddy) with SSL is recommended for production. See [Setup Guide](docs/SETUP.md).
+> - A reverse proxy (Nginx / Caddy) with SSL is recommended for production. See [Deployment Guide](docs/deployment-guide.md).
 
 ---
 
@@ -152,7 +166,7 @@ Arkon runs **7 Docker containers** (PostgreSQL + pgvector, Redis, MinIO, FastAPI
 
 4. Access the portal at `http://localhost:3119`, sign in as admin, then go to **Settings** to pick your embedding / LLM / vision models and paste API keys.
 
-→ See [Setup Guide](docs/SETUP.md) for development mode and the full env reference.
+→ See [Deployment Guide](docs/deployment-guide.md) for development mode and the full env reference.
 
 ---
 
@@ -179,7 +193,7 @@ For stronger enforcement, create a **Project** in Claude Desktop, attach Arkon a
   <img src="docs/assets/arkon-in-use-of-claude.png" alt="Arkon in use with Claude Desktop" width="720">
 </p>
 
-→ See [MCP & Claude](docs/MCP.md) for the complete tool reference.
+→ See [System Architecture](docs/system-architecture.md) for data flows and [Deployment Guide](docs/deployment-guide.md) for connection guides.
 
 ---
 

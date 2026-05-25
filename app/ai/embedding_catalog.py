@@ -80,6 +80,47 @@ EMBEDDING_CATALOG: dict[str, EmbeddingModelSpec] = {
         cost_per_1m_tokens=0.13,
         notes="Highest quality OpenAI embedding. ~6.5x cost of 3-small.",
     ),
+    # --- Custom Providers ---
+    "custom/openai-768": EmbeddingModelSpec(
+        id="custom/openai-768",
+        provider="custom_openai",
+        model_id="custom",
+        dimension=768,
+        max_input_tokens=8192,
+        label="Custom OpenAI-Compatible (768d)",
+        cost_per_1m_tokens=None,
+        notes="Uses custom endpoint, API key, and model ID configured below.",
+    ),
+    "custom/openai-1024": EmbeddingModelSpec(
+        id="custom/openai-1024",
+        provider="custom_openai",
+        model_id="custom",
+        dimension=1024,
+        max_input_tokens=8192,
+        label="Custom OpenAI-Compatible (1024d)",
+        cost_per_1m_tokens=None,
+        notes="Uses custom endpoint, API key, and model ID configured below.",
+    ),
+    "custom/openai-1536": EmbeddingModelSpec(
+        id="custom/openai-1536",
+        provider="custom_openai",
+        model_id="custom",
+        dimension=1536,
+        max_input_tokens=8192,
+        label="Custom OpenAI-Compatible (1536d)",
+        cost_per_1m_tokens=None,
+        notes="Uses custom endpoint, API key, and model ID configured below.",
+    ),
+    "custom/openai-3072": EmbeddingModelSpec(
+        id="custom/openai-3072",
+        provider="custom_openai",
+        model_id="custom",
+        dimension=3072,
+        max_input_tokens=8192,
+        label="Custom OpenAI-Compatible (3072d)",
+        cost_per_1m_tokens=None,
+        notes="Uses custom endpoint, API key, and model ID configured below.",
+    ),
 }
 
 
