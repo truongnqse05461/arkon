@@ -2,6 +2,7 @@
 
 import type { UIMessage } from "ai";
 import type { Element } from "hast";
+import { useMemo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -25,20 +26,21 @@ function CitationSources({
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground/60 mb-1">
         Sources
       </p>
-      <ol className="list-none space-y-0.5">
+      <ul className="list-none space-y-0.5">
         {citations.map(({ slug, n, label }) => (
           <li key={slug} className="flex items-center gap-1.5 text-xs">
             <span className="text-muted-foreground/60 shrink-0">[{n}]</span>
             <button
               type="button"
               onClick={() => onCitationClick(slug)}
+              aria-label={`View source ${n}: ${label}`}
               className="text-left text-muted-foreground hover:text-foreground hover:underline transition-colors truncate"
             >
               {label}
             </button>
           </li>
         ))}
-      </ol>
+      </ul>
     </div>
   );
 }
@@ -46,11 +48,36 @@ function CitationSources({
 export function MessageBubble({ message, onCitationClick }: MessageBubbleProps) {
   const isUser = message.role === "user";
 
+  const markdownComponents = useMemo(() => ({
+    sup({ node, children }: { node?: unknown; children?: ReactNode }) {
+      if (!node || typeof node !== "object" || (node as { type?: string }).type !== "element") {
+        return <sup>{children}</sup>;
+      }
+      const el = node as Element;
+      const slug = el.properties?.["data-slug"] as string | undefined;
+      if (slug) {
+        return (
+          <sup>
+            <button
+              type="button"
+              onClick={() => onCitationClick(slug)}
+              aria-label={`View source: ${slug}`}
+              className="text-primary hover:underline cursor-pointer font-normal"
+            >
+              {children}
+            </button>
+          </sup>
+        );
+      }
+      return <sup>{children}</sup>;
+    },
+  }), [onCitationClick]);
+
   if (isUser) {
     return (
       <div className="flex justify-end">
         <div className="max-w-[70%] bg-foreground text-background rounded-[10px_10px_2px_10px] px-3 py-2 text-sm leading-relaxed">
-          {message.content}
+          {typeof message.content === "string" ? message.content : null}
         </div>
       </div>
     );
@@ -70,26 +97,7 @@ export function MessageBubble({ message, onCitationClick }: MessageBubbleProps) 
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeRaw]}
-                components={{
-                  sup({ node, children }) {
-                    const el = node as Element;
-                    const slug = el.properties?.["data-slug"] as string | undefined;
-                    if (slug) {
-                      return (
-                        <sup>
-                          <button
-                            type="button"
-                            onClick={() => onCitationClick(slug)}
-                            className="text-primary hover:underline cursor-pointer font-normal"
-                          >
-                            {children}
-                          </button>
-                        </sup>
-                      );
-                    }
-                    return <sup>{children}</sup>;
-                  },
-                }}
+                components={markdownComponents}
               >
                 {processed}
               </ReactMarkdown>
