@@ -81,12 +81,19 @@ async def get_llm_catalog(
 ):
     from app.ai.llm_catalog import list_specs
     from app.ai.registry import ProviderRegistry
-    from app.services.config_service import ConfigService
+    from app.services.config_service import ConfigService, llm_api_key_for
 
     registry = ProviderRegistry(db)
     active = await registry.get_active_llm_spec_id()
     svc = ConfigService(db)
-    api_key_configured = bool(await svc.get("llm_api_key"))
+
+    # Pre-fetch per-provider keys so we can mark each spec correctly.
+    all_specs = list_specs()
+    providers = {s.provider for s in all_specs}
+    key_configured: dict[str, bool] = {}
+    for provider in providers:
+        key = await svc.get(llm_api_key_for(provider)) or await svc.get("llm_api_key")
+        key_configured[provider] = bool(key)
 
     specs = [
         LLMSpecOut(
@@ -101,9 +108,9 @@ async def get_llm_catalog(
             cost_per_1m_input_tokens=s.cost_per_1m_input_tokens,
             cost_per_1m_output_tokens=s.cost_per_1m_output_tokens,
             notes=s.notes,
-            api_key_configured=api_key_configured,
+            api_key_configured=key_configured.get(s.provider, False),
         )
-        for s in list_specs()
+        for s in all_specs
     ]
     return LLMCatalogOut(active_spec_id=active, specs=specs)
 
@@ -115,7 +122,7 @@ async def switch_llm_model(
     _user: Employee = require_permission("org:settings:manage"),
 ):
     from app.ai.llm_catalog import UnknownLLMModel, get_spec
-    from app.services.config_service import ACTIVE_LLM_MODEL_KEY, ConfigService
+    from app.services.config_service import ACTIVE_LLM_MODEL_KEY, ConfigService, llm_api_key_for
 
     try:
         spec = get_spec(body.model_spec_id)
@@ -123,7 +130,8 @@ async def switch_llm_model(
         raise HTTPException(status_code=400, detail=str(e))
 
     svc = ConfigService(db)
-    if not await svc.get("llm_api_key"):
+    api_key = await svc.get(llm_api_key_for(spec.provider)) or await svc.get("llm_api_key")
+    if not api_key:
         raise HTTPException(
             status_code=400,
             detail="No LLM API key configured. Save the API key first, then switch.",
@@ -149,12 +157,18 @@ async def get_vision_catalog(
 ):
     from app.ai.registry import ProviderRegistry
     from app.ai.vision_catalog import list_specs
-    from app.services.config_service import ConfigService
+    from app.services.config_service import ConfigService, vision_api_key_for
 
     registry = ProviderRegistry(db)
     active = await registry.get_active_vision_spec_id()
     svc = ConfigService(db)
-    api_key_configured = bool(await svc.get("vision_api_key"))
+
+    all_specs = list_specs()
+    providers = {s.provider for s in all_specs}
+    key_configured: dict[str, bool] = {}
+    for provider in providers:
+        key = await svc.get(vision_api_key_for(provider)) or await svc.get("vision_api_key")
+        key_configured[provider] = bool(key)
 
     specs = [
         VisionSpecOut(
@@ -166,9 +180,9 @@ async def get_vision_catalog(
             cost_per_1m_input_tokens=s.cost_per_1m_input_tokens,
             cost_per_image=s.cost_per_image,
             notes=s.notes,
-            api_key_configured=api_key_configured,
+            api_key_configured=key_configured.get(s.provider, False),
         )
-        for s in list_specs()
+        for s in all_specs
     ]
     return VisionCatalogOut(active_spec_id=active, specs=specs)
 
@@ -180,7 +194,7 @@ async def switch_vision_model(
     _user: Employee = require_permission("org:settings:manage"),
 ):
     from app.ai.vision_catalog import UnknownVisionModel, get_spec
-    from app.services.config_service import ACTIVE_VISION_MODEL_KEY, ConfigService
+    from app.services.config_service import ACTIVE_VISION_MODEL_KEY, ConfigService, vision_api_key_for
 
     try:
         spec = get_spec(body.model_spec_id)
@@ -188,7 +202,8 @@ async def switch_vision_model(
         raise HTTPException(status_code=400, detail=str(e))
 
     svc = ConfigService(db)
-    if not await svc.get("vision_api_key"):
+    api_key = await svc.get(vision_api_key_for(spec.provider)) or await svc.get("vision_api_key")
+    if not api_key:
         raise HTTPException(
             status_code=400,
             detail="No vision API key configured. Save the API key first, then switch.",

@@ -24,6 +24,7 @@ ENV/
 .env
 .env.local
 .env.docker
+.mcp.json
 
 # Docker volumes
 pg_data/
