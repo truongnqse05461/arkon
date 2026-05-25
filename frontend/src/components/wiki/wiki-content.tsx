@@ -33,6 +33,14 @@ export function preprocessWikilinks(md: string): string {
     .replace(/\[\[([^\]]+)\]\]/g, "[$1](/wiki/$1)");
 }
 
+// remark-math parses $$...$$ and $...$, not \[...\] / \(...\).
+// Convert LaTeX display/inline delimiters to the remark-math format.
+export function preprocessMath(md: string): string {
+  return md
+    .replace(/\\\[\n?([\s\S]*?)\n?\\\]/g, (_, inner) => `$$\n${inner.trim()}\n$$`)
+    .replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => `$${inner}$`);
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = React.useState(false);
   return (
@@ -81,7 +89,7 @@ export function WikiContent({
    *  so inline navigation preserves the current scope context. */
   linkSuffix?: string;
 }) {
-  const processed = preprocessWikilinks(markdown);
+  const processed = preprocessMath(preprocessWikilinks(markdown));
   const headings = React.useMemo(() => extractHeadings(markdown), [markdown]);
   const [activeHeading, setActiveHeading] = React.useState<string | null>(null);
 
