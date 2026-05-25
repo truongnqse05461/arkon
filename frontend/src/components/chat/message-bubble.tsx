@@ -6,8 +6,17 @@ import { useMemo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { ToolCallRow } from "./tool-call-row";
 import { extractCitations, type Citation } from "./citation-utils";
+
+const sanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    sup: [...(defaultSchema.attributes?.sup ?? []), "dataSlug", "dataN"],
+  },
+};
 
 type MessageBubbleProps = {
   message: UIMessage;
@@ -96,7 +105,7 @@ export function MessageBubble({ message, onCitationClick }: MessageBubbleProps) 
             >
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw]}
+                rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
                 components={markdownComponents}
               >
                 {processed}
