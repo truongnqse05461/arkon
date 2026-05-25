@@ -33,7 +33,7 @@ export function ChatInput({
   };
 
   return (
-    <div className="border-t border-border bg-background px-4 py-3 shrink-0">
+    <div className="border-t border-border bg-background px-4 pt-3 pb-1 shrink-0">
       {/* Attachment chips */}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-2">
