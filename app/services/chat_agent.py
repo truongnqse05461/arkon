@@ -476,6 +476,7 @@ def _build_system_prompt(
         "When citing wiki pages or sources, format citations inline as: label【slug】",
         "Examples: GIM【entity/gim】, the MAU spec【source/gim-mau-spec-150426-083136】",
         "Always use this exact 【】 bracket style — never bare slugs or Markdown links.",
+        "Use the page title or a short descriptive name as the label.",
         "Your answers are scoped to the user's department and workspace access only.",
     ]
     if attachments:
