@@ -7,9 +7,10 @@ import { MessageBubble } from "./message-bubble";
 type MessageListProps = {
   messages: UIMessage[];
   isLoading: boolean;
+  onCitationClick: (slug: string) => void;
 };
 
-export function MessageList({ messages, isLoading }: MessageListProps) {
+export function MessageList({ messages, isLoading, onCitationClick }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -35,7 +36,7 @@ export function MessageList({ messages, isLoading }: MessageListProps) {
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
       {messages.map((message) => (
-        <MessageBubble key={message.id} message={message} />
+        <MessageBubble key={message.id} message={message} onCitationClick={onCitationClick} />
       ))}
       {isLoading && (
         <div className="flex items-center gap-1.5 text-muted-foreground">

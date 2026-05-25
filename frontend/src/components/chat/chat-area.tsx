@@ -30,6 +30,11 @@ export function ChatArea({
   onDeleteSession,
 }: ChatAreaProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [, setActiveCitationSlug] = useState<string | null>(null);
+
+  const handleCitationClick = useCallback((slug: string) => {
+    setActiveCitationSlug(slug);
+  }, []);
 
   const { messages, input, setInput, handleSubmit, isLoading } = useChat({
     api: `${API_BASE}/api/chat/sessions/${sessionId}/stream`,
@@ -70,7 +75,7 @@ export function ChatArea({
       </div>
 
       {/* Messages */}
-      <MessageList messages={messages as UIMessage[]} isLoading={isLoading} />
+      <MessageList messages={messages as UIMessage[]} isLoading={isLoading} onCitationClick={handleCitationClick} />
 
       {/* Input */}
       <ChatInput
