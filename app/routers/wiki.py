@@ -199,6 +199,7 @@ async def list_wiki_pages(
     knowledge_type_slug: Optional[str] = Query(None),
     scope_type: Optional[str] = Query(None, description="Filter to a specific scope: global, department, or project"),
     scope_id: Optional[str] = Query(None, description="UUID of the scope (required for department/project)"),
+    search: Optional[str] = Query(None, description="Filter by title or slug (case-insensitive)"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -251,6 +252,11 @@ async def list_wiki_pages(
         stmt = stmt.where(WikiPage.page_type == page_type)
     if knowledge_type_slug:
         stmt = stmt.where(WikiPage.knowledge_type_slugs.any(knowledge_type_slug))  # type: ignore[arg-type]
+    if search:
+        term = f"%{search}%"
+        stmt = stmt.where(
+            (WikiPage.title.ilike(term)) | (WikiPage.slug.ilike(term))
+        )
 
     rows = (await db.execute(stmt)).all()
     return [_summary(r.WikiPage, scope_name=r.scope_name) for r in rows]
