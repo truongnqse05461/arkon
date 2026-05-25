@@ -37,6 +37,7 @@ export function ChatArea({
     api: `${API_BASE}/api/chat/sessions/${sessionId}/stream`,
     headers: { Authorization: `Bearer ${getToken()}` },
     body: { attachments: attachments.map(({ label: _label, ...rest }) => rest) },
+    // UIMessage is a superset of Message in the AI SDK; cast required due to type version delta
     initialMessages: initialMessages as unknown as Message[],
     onFinish: () => {
       setAttachments([]);
@@ -48,6 +49,10 @@ export function ChatArea({
     if (!input.trim() || isLoading) return;
     handleSubmit({});
   }, [input, isLoading, handleSubmit]);
+
+  const handleCitationClick = useCallback((slug: string) => {
+    setSelectedSlug(slug);
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -75,7 +80,7 @@ export function ChatArea({
       <MessageList
         messages={messages as UIMessage[]}
         isLoading={isLoading}
-        onCitationClick={setSelectedSlug}
+        onCitationClick={handleCitationClick}
       />
 
       {/* Input */}
