@@ -1,6 +1,7 @@
 export type Citation = {
   slug: string;
   n: number;
+  /** Raw text — HTML-escape before injecting into DOM or markdown. */
   label: string;
 };
 
