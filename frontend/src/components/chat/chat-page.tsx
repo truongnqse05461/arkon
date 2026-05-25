@@ -90,7 +90,7 @@ export function ChatPage() {
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
 
   return (
-    <div className="flex h-full min-h-0 -mx-6 -my-4 md:-mx-8 md:-my-4 lg:-mx-10">
+    <div className="flex h-full min-h-0 -mx-6 -mt-4 -mb-6 md:-mx-8 md:-mt-4 md:-mb-8 lg:-mx-10 lg:-mb-10">
       <SessionPanel
         sessions={sessions}
         activeSessionId={activeSessionId}
