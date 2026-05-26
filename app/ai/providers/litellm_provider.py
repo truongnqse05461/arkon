@@ -60,6 +60,16 @@ def _bifrost_extra_body(config: ProviderConfig) -> dict:
     return {"fallbacks": fallbacks}
 
 
+def _clamp_temperature(kwargs: dict) -> dict:
+    """Drop temperature for models that don't support it (e.g. GPT-5)."""
+    model: str = kwargs.get("model", "")
+    model_lower = model.lower()
+    # gpt-5 (not gpt-5.1) only supports temperature=1
+    if "gpt-5" in model_lower and "gpt-5.1" not in model_lower:
+        kwargs.pop("temperature", None)
+    return kwargs
+
+
 class LiteLLMEmbedding(EmbeddingProvider):
     """LiteLLM embedding provider."""
 
@@ -190,6 +200,7 @@ class LiteLLMLLM(LLMProvider):
         if extra_body:
             kwargs["extra_body"] = extra_body
 
+        _clamp_temperature(kwargs)
         response = await litellm.acompletion(**kwargs)
         return response.choices[0].message.content or ""
 
@@ -221,6 +232,7 @@ class LiteLLMLLM(LLMProvider):
         if extra_body:
             kwargs["extra_body"] = extra_body
 
+        _clamp_temperature(kwargs)
         response = await litellm.acompletion(**kwargs)
         choice = response.choices[0]
         message = choice.message
@@ -300,6 +312,7 @@ class LiteLLMVision(VisionProvider):
                 extra_body = _bifrost_extra_body(self.config)
                 if extra_body:
                     call_kwargs["extra_body"] = extra_body
+                _clamp_temperature(call_kwargs)
                 response = await litellm.acompletion(**call_kwargs)
                 return response.choices[0].message.content or ""
             except Exception as e:
