@@ -106,6 +106,14 @@ class Source(Base):
         UUID(as_uuid=True), nullable=True,
         comment="Project/workspace ID when scope_type=project. Null for global.",
     )
+    source_language: Mapped[Optional[str]] = mapped_column(
+        String(8), nullable=True,
+        comment="Auto-detected source language (ISO 639-1: 'zh', 'en', 'vi', ...)",
+    )
+    target_language: Mapped[Optional[str]] = mapped_column(
+        String(8), nullable=True,
+        comment="Uploader-chosen target language; null = no translation",
+    )
     knowledge_type_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("knowledge_types.id", ondelete="SET NULL"),
         nullable=True,
@@ -301,6 +309,15 @@ class WikiPage(Base):
     page_type: Mapped[str] = mapped_column(String(30), nullable=False)
     content_md: Mapped[str] = mapped_column(Text, nullable=False, default="")
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    source_language: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    target_language: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    title_translated: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    summary_translated: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    content_md_translated: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    translation_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="skipped",
+        comment="pending | done | skipped | failed",
+    )
     # --- Scope: global or project (workspace) ---
     scope_type: Mapped[str] = mapped_column(
         String(20), default=ScopeType.GLOBAL.value,
@@ -1067,6 +1084,10 @@ class _WikiPageEmbeddingBase:
         primary_key=True,
     )
     model_spec_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    language: Mapped[str] = mapped_column(
+        String(8), primary_key=True, default="source",
+        comment="'source' or 'target' — which half of a bilingual page this row embeds",
+    )
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     embedded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
