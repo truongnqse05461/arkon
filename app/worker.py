@@ -151,6 +151,19 @@ async def ingest_file_task(ctx: dict, source_id: str):
             full_text, page_offsets = assemble_full_text(pages_data)
             source.full_text = full_text
             source.page_offsets = page_offsets
+            await session.commit()
+
+            # Detect source language for the optional TRANSLATE phase.
+            if source.target_language and not source.source_language:
+                from app.services.language_detection import detect_language
+                from app.config import settings
+
+                code, confidence = detect_language(source.full_text or "")
+                if confidence >= settings.language_detection_min_confidence:
+                    source.source_language = code
+                await session.commit()
+
+            await tracker.update(50, f"Outline: {len(source.outline_json or [])} top-level sections")
 
             # --- Step 5: Token count (drives auto-approve vs gate) ---
             token_count = count_tokens(full_text)
@@ -256,6 +269,16 @@ async def ingest_url_task(ctx: dict, source_id: str):
             token_count = count_tokens(full_text)
             source.extracted_token_count = token_count
             await session.commit()
+
+            # Detect source language for the optional TRANSLATE phase.
+            if source.target_language and not source.source_language:
+                from app.services.language_detection import detect_language
+                from app.config import settings
+
+                code, confidence = detect_language(source.full_text or "")
+                if confidence >= settings.language_detection_min_confidence:
+                    source.source_language = code
+                await session.commit()
 
             threshold = settings.auto_approve_extraction_threshold_tokens
             if token_count > threshold:
