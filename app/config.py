@@ -46,10 +46,10 @@ class Settings(BaseSettings):
     # --- MinIO ---
     minio_endpoint: str = Field(default="localhost:9000")
     minio_public_endpoint: str = Field(
-        default="",
+        default="localhost:9002",
         description="Public-facing MinIO address used in presigned URLs (browser-accessible). "
-                    "Defaults to minio_endpoint if not set. "
-                    "In Docker: set to 'localhost:9000' so presigned URLs work from the browser.",
+                    "Defaults to host-mapped port 9002 (docker-compose maps 9002:9000). "
+                    "If set to empty string, falls back to minio_endpoint.",
     )
     minio_access_key: str = Field(default="minioadmin")
     minio_secret_key: str = Field(default="minioadmin123")
