@@ -90,6 +90,20 @@ class Settings(BaseSettings):
         description="Max times a source may be auto-flipped from stuck 'processing' back to 'error' before the retry API refuses further attempts. Prevents token-burning loops when the failure is deterministic (bad provider key, malformed file).",
     )
 
+    # --- Translation Pipeline ---
+    translation_enabled: bool = Field(
+        default=True,
+        description="Enable optional TRANSLATE phase in the MRP pipeline",
+    )
+    translation_model_spec_id: str | None = Field(
+        default=None,
+        description="LLM spec_id for translation calls; null = use the writer LLM",
+    )
+    language_detection_min_confidence: float = Field(
+        default=0.6,
+        description="Minimum confidence for source_language auto-detection",
+    )
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     @property
