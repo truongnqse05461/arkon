@@ -394,6 +394,44 @@ async def _auto_trigger_refine(source_id: uuid.UUID, plan) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Phase 4.5 — TRANSLATE helper
+# ---------------------------------------------------------------------------
+
+async def _maybe_run_translate_phase(
+    pages: list,
+    source_language: Optional[str],
+    target_language: Optional[str],
+    llm,
+) -> list:
+    """Phase 4.5 — translate every page if applicable. Mutates and returns pages."""
+    from app.ai.mrp.translator import translate_pages
+
+    if not target_language:
+        return pages
+    if not source_language:
+        # Unknown source language → skip translation.
+        return pages
+    if source_language == target_language:
+        return pages
+
+    results = await translate_pages(
+        llm=llm,
+        pages=pages,
+        source_lang=source_language,
+        target_lang=target_language,
+    )
+    for page, output in results:
+        if output is None:
+            page.translation_status = "failed"
+        else:
+            page.title_translated = output.title
+            page.summary_translated = output.summary
+            page.content_md_translated = output.content_md
+            page.translation_status = "done"
+    return pages
+
+
+# ---------------------------------------------------------------------------
 # Entry point 2: Phase 3-5
 # ---------------------------------------------------------------------------
 
@@ -497,6 +535,17 @@ async def run_refine_pipeline(
         if src:
             src.pipeline_phase = "verify"
         await session.commit()
+
+    # Phase 4.5: TRANSLATE
+    if page_results:
+        src = await session.get(Source, source_id)
+        if src and getattr(src, "target_language", None):
+            page_results = await _maybe_run_translate_phase(
+                pages=page_results,
+                source_language=src.source_language,
+                target_language=src.target_language,
+                llm=llm,
+            )
 
     # Phase 4: VERIFY
     page_results = await run_verify_phase(

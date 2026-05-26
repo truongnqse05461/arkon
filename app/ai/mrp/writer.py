@@ -61,6 +61,11 @@ class PageWriteResult:
     # [{"ref": "[^1]", "absolute_offset": int, "evidence_length": int}]
     entity_names: list[str] = field(default_factory=list)
     related_kb_pages: list[str] = field(default_factory=list)
+    # Translation fields (populated by TRANSLATE phase; None if skipped)
+    title_translated: Optional[str] = None
+    summary_translated: Optional[str] = None
+    content_md_translated: Optional[str] = None
+    translation_status: str = "skipped"  # pending | done | skipped | failed
 
     def to_dict(self) -> dict:
         return {
@@ -73,6 +78,10 @@ class PageWriteResult:
             "citations": self.citations,
             "entity_names": self.entity_names,
             "related_kb_pages": self.related_kb_pages,
+            "title_translated": self.title_translated,
+            "summary_translated": self.summary_translated,
+            "content_md_translated": self.content_md_translated,
+            "translation_status": self.translation_status,
         }
 
     @classmethod
@@ -87,6 +96,10 @@ class PageWriteResult:
             citations=d.get("citations", []),
             entity_names=d.get("entity_names", []),
             related_kb_pages=d.get("related_kb_pages", []),
+            title_translated=d.get("title_translated"),
+            summary_translated=d.get("summary_translated"),
+            content_md_translated=d.get("content_md_translated"),
+            translation_status=d.get("translation_status", "skipped"),
         )
 
 
