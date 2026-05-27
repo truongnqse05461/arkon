@@ -171,5 +171,18 @@ async def run_verify_phase(
         except Exception as exc:
             logger.warning(f"MRP VERIFY conflict check failed: {exc}")
 
+    # 4.3 Translation-failure warning (non-blocking)
+    failed = [
+        p for p in page_results
+        if getattr(p, "translation_status", "skipped") == "failed"
+    ]
+    if failed:
+        slugs = ", ".join(p.slug for p in failed[:5])
+        suffix = " ..." if len(failed) > 5 else ""
+        logger.warning(
+            f"MRP VERIFY: {len(failed)} page(s) had translation failures for "
+            f"source={source.id}: {slugs}{suffix}"
+        )
+
     logger.info(f"MRP VERIFY complete: {len(page_results)} pages verified for source={source.id}")
     return page_results
