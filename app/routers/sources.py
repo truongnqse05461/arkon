@@ -89,6 +89,7 @@ class SourceCreateURL(BaseModel):
     title: Optional[str] = None
     knowledge_type_id: Optional[uuid.UUID] = None
     department_ids: list[uuid.UUID] = []
+    target_language: Optional[str] = None  # ISO 639-1; null = no translation
 
 
 class SourceUpdate(BaseModel):
@@ -318,6 +319,7 @@ async def upload_source(
     department_ids: Optional[str] = Form(None),  # comma-separated UUIDs
     scope_type: Optional[str] = Form(None),
     scope_id: Optional[str] = Form(None),
+    target_language: Optional[str] = Form(None),  # ISO 639-1; null = no translation
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("doc:create"),
 ):
@@ -357,6 +359,7 @@ async def upload_source(
         contributed_by_employee_id=user.id,
         scope_type=scope_type or ScopeType.GLOBAL.value,
         scope_id=uuid.UUID(scope_id) if scope_id else None,
+        target_language=target_language,
     )
     source = await repo.create(source)
     await db.flush()
@@ -418,6 +421,7 @@ async def add_url_source(
         knowledge_type_id=req.knowledge_type_id,
         contributed_by_employee_id=user.id,
         scope_type=ScopeType.GLOBAL.value,
+        target_language=req.target_language,
     )
     source = await repo.create(source)
     await db.flush()
