@@ -453,6 +453,12 @@ async def apply_create(
     embedding: Optional[list[float]] = None,
     scope_type: str = "global",
     scope_id: Optional[uuid.UUID] = None,
+    source_language: Optional[str] = None,
+    target_language: Optional[str] = None,
+    title_translated: Optional[str] = None,
+    summary_translated: Optional[str] = None,
+    content_md_translated: Optional[str] = None,
+    translation_status: str = "skipped",
 ) -> WikiPage:
     """Insert a new page in the given scope. Conflicts raise — caller should use update."""
     page = WikiPage(
@@ -467,6 +473,12 @@ async def apply_create(
         scope_type=scope_type,
         scope_id=scope_id,
         version=1,
+        source_language=source_language,
+        target_language=target_language,
+        title_translated=title_translated,
+        summary_translated=summary_translated,
+        content_md_translated=content_md_translated,
+        translation_status=translation_status,
     )
     _ = embedding  # backward-compat parameter, ignored
     session.add(page)
@@ -490,6 +502,12 @@ async def apply_update(
     embedding: Optional[list[float]] = None,
     scope_type: str = "global",
     scope_id: Optional[uuid.UUID] = None,
+    source_language: Optional[str] = None,
+    target_language: Optional[str] = None,
+    title_translated: Optional[str] = None,
+    summary_translated: Optional[str] = None,
+    content_md_translated: Optional[str] = None,
+    translation_status: str = "skipped",
 ) -> Optional[WikiPage]:
     """
     Update an existing page atomically within the given scope:
@@ -518,6 +536,30 @@ async def apply_update(
     # wiki_page_embeddings_<dim> table. The `embedding` parameter is accepted
     # only for backward compatibility and ignored here.
     _ = embedding
+
+    # Target language is immutable once set — first writer wins.
+    if page.target_language is None and target_language is not None:
+        page.target_language = target_language
+        page.source_language = source_language or page.source_language
+    elif (
+        page.target_language is not None
+        and target_language
+        and target_language != page.target_language
+    ):
+        logger.warning(
+            f"apply_update: page {page.slug} target_language={page.target_language} "
+            f"but source requested {target_language}; ignoring source's choice."
+        )
+
+    if title_translated is not None:
+        page.title_translated = title_translated
+    if summary_translated is not None:
+        page.summary_translated = summary_translated
+    if content_md_translated is not None:
+        page.content_md_translated = content_md_translated
+    if translation_status:
+        page.translation_status = translation_status
+
     page.version = (page.version or 1) + 1
     await session.flush()
     await refresh_links(session, page.id, slug, new_content_md)

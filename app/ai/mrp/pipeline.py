@@ -119,6 +119,9 @@ async def run_commit_phase(
                 action = pr.action
                 page = None
 
+                src_lang = getattr(source, "source_language", None)
+                src_target = getattr(source, "target_language", None)
+
                 if action == "CREATE":
                     # Check if already created in this scope by a concurrent pipeline
                     existing = await wiki_service.get_page_by_slug(
@@ -138,6 +141,12 @@ async def run_commit_phase(
                             source_ids=[source.id],
                             scope_type=scope_type,
                             scope_id=scope_id,
+                            source_language=src_lang,
+                            target_language=src_target,
+                            title_translated=pr.title_translated,
+                            summary_translated=pr.summary_translated,
+                            content_md_translated=pr.content_md_translated,
+                            translation_status=pr.translation_status,
                         )
                         pages_created += 1
 
@@ -159,6 +168,12 @@ async def run_commit_phase(
                                 pr.slug,
                             )
 
+                    # Page's target_language is immutable — prefer the existing one if set.
+                    existing_target = (
+                        existing_page.target_language if existing_page else None
+                    )
+                    effective_target = existing_target or src_target
+
                     page = await wiki_service.apply_update(
                         session,
                         slug=pr.slug,
@@ -169,6 +184,12 @@ async def run_commit_phase(
                         add_source_id=source.id,
                         scope_type=scope_type,
                         scope_id=scope_id,
+                        source_language=src_lang,
+                        target_language=effective_target,
+                        title_translated=pr.title_translated,
+                        summary_translated=pr.summary_translated,
+                        content_md_translated=pr.content_md_translated,
+                        translation_status=pr.translation_status,
                     )
                     if page is None:
                         page = await wiki_service.apply_create(
@@ -182,6 +203,12 @@ async def run_commit_phase(
                             source_ids=[source.id],
                             scope_type=scope_type,
                             scope_id=scope_id,
+                            source_language=src_lang,
+                            target_language=src_target,
+                            title_translated=pr.title_translated,
+                            summary_translated=pr.summary_translated,
+                            content_md_translated=pr.content_md_translated,
+                            translation_status=pr.translation_status,
                         )
                         pages_created += 1
                     else:
@@ -191,10 +218,32 @@ async def run_commit_phase(
 
                 if embedding_provider is not None and embedding_spec is not None and page is not None:
                     try:
+                        # Source-language embedding (always written)
                         embed_text = embedding_input_text(pr.title, pr.summary, pr.content_md)
                         vector = await embedding_provider.embed(embed_text)
                         content_hash = compute_content_hash(pr.title, pr.summary, pr.content_md)
-                        await upsert_page_embedding(session, page.id, embedding_spec, vector, content_hash)
+                        await upsert_page_embedding(
+                            session, page.id, embedding_spec, vector, content_hash,
+                            language="source",
+                        )
+
+                        # Target-language embedding — only when translation succeeded
+                        if pr.translation_status == "done" and pr.content_md_translated:
+                            tgt_text = embedding_input_text(
+                                pr.title_translated or "",
+                                pr.summary_translated or "",
+                                pr.content_md_translated or "",
+                            )
+                            tgt_vector = await embedding_provider.embed(tgt_text)
+                            tgt_hash = compute_content_hash(
+                                pr.title_translated or "",
+                                pr.summary_translated or "",
+                                pr.content_md_translated or "",
+                            )
+                            await upsert_page_embedding(
+                                session, page.id, embedding_spec, tgt_vector, tgt_hash,
+                                language="target",
+                            )
                     except Exception as embed_exc:
                         logger.warning(f"MRP COMMIT embed failed for '{pr.slug}' scope={scope_type}: {embed_exc}")
 
