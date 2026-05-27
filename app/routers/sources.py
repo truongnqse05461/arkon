@@ -72,6 +72,8 @@ class SourceResponse(BaseModel):
     contributed_by_name: Optional[str] = None
     scope_type: str = "global"
     scope_id: Optional[uuid.UUID] = None
+    source_language: Optional[str] = None
+    target_language: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -148,6 +150,8 @@ def _to_response(source: Source, wiki_page_count: int = 0, image_count: int = 0)
         contributed_by_name=source.contributor.name if source.contributor else None,
         scope_type=source.scope_type or "global",
         scope_id=source.scope_id,
+        source_language=getattr(source, "source_language", None),
+        target_language=getattr(source, "target_language", None),
         created_at=source.created_at.isoformat(),
         updated_at=source.updated_at.isoformat(),
     )

@@ -175,6 +175,11 @@ export function KnowledgeTable({
                         {source.file_name && source.file_name !== source.title && (
                           <p className="text-[10px] text-muted-foreground truncate max-w-[280px]">{source.file_name}</p>
                         )}
+                        {source.target_language && (
+                          <Badge variant="outline" className="text-[10px] font-medium h-4 px-1.5 mt-1">
+                            {(source.source_language ?? "??").toUpperCase()} → {source.target_language.toUpperCase()}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </TableCell>

@@ -32,6 +32,8 @@ export type Source = {
   scope_id?: string;
   pipeline_strategy?: string;
   pipeline_phase?: string;
+  source_language?: string | null;
+  target_language?: string | null;
   created_at: string;
   updated_at?: string;
 };
