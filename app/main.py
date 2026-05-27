@@ -189,6 +189,7 @@ from app.routers import (  # noqa: E402
     admin_models,
     admin_settings,
     admin_stats,
+    admin_translation,
     audit,
     auth,
     chat,
@@ -220,6 +221,7 @@ app.include_router(admin_settings.router, prefix="/api", tags=["settings"])
 app.include_router(admin_embeddings.router, prefix="/api", tags=["settings"])
 app.include_router(admin_models.router, prefix="/api", tags=["settings"])
 app.include_router(admin_stats.router, prefix="/api", tags=["statistics"])
+app.include_router(admin_translation.router, prefix="/api", tags=["admin"])
 app.include_router(rbac.router, prefix="/api", tags=["rbac"])
 app.include_router(knowledge_types.router, prefix="/api", tags=["knowledge-types"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])
