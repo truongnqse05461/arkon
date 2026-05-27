@@ -419,12 +419,13 @@ async def search_pages_semantic(
     stmt = (
         select(
             WikiPage,
+            Emb.language.label("matched_language"),
             (1 - Emb.embedding.cosine_distance(query_embedding)).label("similarity"),
         )
         .join(Emb, Emb.page_id == WikiPage.id)
         .where(and_(*where_clauses))
         .order_by(Emb.embedding.cosine_distance(query_embedding))
-        .limit(top_k)
+        .limit(top_k * 2)  # over-fetch so dedupe per page_id can still return top_k
     )
     if allowed_kt_slugs:
         stmt = stmt.where(
@@ -434,7 +435,23 @@ async def search_pages_semantic(
             )
         )
     result = await session.execute(stmt)
-    return [(row[0], float(row[1])) for row in result.all()]
+
+    # Dedupe per page_id keeping the first hit (best similarity by ORDER BY).
+    # The matched_language is attached as a transient attribute so callers that
+    # care can read `page.matched_language`; callers that only unpack
+    # (page, similarity) keep working unchanged.
+    seen: dict[uuid.UUID, tuple[WikiPage, float]] = {}
+    for row in result.all():
+        page = row[0]
+        matched_lang = row[1]
+        sim = float(row[2])
+        if page.id in seen:
+            continue
+        page.matched_language = matched_lang
+        seen[page.id] = (page, sim)
+        if len(seen) >= top_k:
+            break
+    return list(seen.values())
 
 
 # ---------------------------------------------------------------------------

@@ -308,8 +308,14 @@ def register_tools(mcp: FastMCP):
                 f" [{', '.join(page.knowledge_type_slugs)}]"
                 if page.knowledge_type_slugs else ""
             )
+            matched_lang = getattr(page, "matched_language", None)
+            lang_label = (
+                f" [{matched_lang}]"
+                if matched_lang and matched_lang != "source" and page.target_language
+                else ""
+            )
             entry = (
-                f"- `{page.slug}` ({page.page_type}){kt_label} — {similarity_pct}\n"
+                f"- `{page.slug}` ({page.page_type}){kt_label}{lang_label} — {similarity_pct}\n"
                 f"  **{page.title}**"
             )
             if summary:
