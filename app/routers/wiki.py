@@ -66,6 +66,12 @@ class WikiPageDetail(WikiPageSummary):
     backlinks: list[str]
     outlinks: list[str]
     orphaned: bool = False
+    source_language: Optional[str] = None
+    target_language: Optional[str] = None
+    title_translated: Optional[str] = None
+    summary_translated: Optional[str] = None
+    content_md_translated: Optional[str] = None
+    translation_status: Optional[str] = None
 
 
 class WikiDirectEditRequest(BaseModel):
@@ -156,6 +162,12 @@ def _detail(p: WikiPage, backlinks: list[str], outlinks: list[str]) -> WikiPageD
         backlinks=sorted(backlinks),
         outlinks=sorted(outlinks),
         orphaned=p.orphaned or False,
+        source_language=getattr(p, "source_language", None),
+        target_language=getattr(p, "target_language", None),
+        title_translated=getattr(p, "title_translated", None),
+        summary_translated=getattr(p, "summary_translated", None),
+        content_md_translated=getattr(p, "content_md_translated", None),
+        translation_status=getattr(p, "translation_status", None),
     )
 
 

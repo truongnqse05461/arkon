@@ -25,6 +25,12 @@ export type WikiPageDetail = WikiPageSummary & {
   backlinks: string[];
   outlinks: string[];
   orphaned?: boolean;
+  source_language?: string | null;
+  target_language?: string | null;
+  title_translated?: string | null;
+  summary_translated?: string | null;
+  content_md_translated?: string | null;
+  translation_status?: string | null;
 };
 
 export type WikiGraphNode = {
