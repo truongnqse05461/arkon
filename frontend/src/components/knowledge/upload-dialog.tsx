@@ -78,6 +78,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [scopeType, setScopeType] = useState("global");
   const [scopeId, setScopeId] = useState("");
+  const [targetLanguage, setTargetLanguage] = useState("");
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -148,6 +149,9 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
       if (scopeType !== "global" && scopeId) {
         formData.append("scope_id", scopeId);
       }
+      if (targetLanguage) {
+        formData.append("target_language", targetLanguage);
+      }
 
       await apiUpload("/api/sources/upload", formData);
       onUploaded();
@@ -157,6 +161,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
       setSelectedDepts([]);
       setScopeType("global");
       setScopeId("");
+      setTargetLanguage("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -362,6 +367,29 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                 Document content will be compiled into the shared wiki and visible to all employees — including those without access to the original file. Only upload if the content is not sensitive.
               </p>
             )}
+          </div>
+
+          {/* Translation */}
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="target-language">Translate to</Label>
+            <Select
+              value={targetLanguage}
+              onValueChange={(v) => setTargetLanguage(v ?? "")}
+            >
+              <SelectTrigger id="target-language" className="bg-background w-full">
+                <SelectValue placeholder="No translation" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">No translation</SelectItem>
+                <SelectItem value="vi">Vietnamese</SelectItem>
+                <SelectItem value="en">English</SelectItem>
+                <SelectItem value="zh">Chinese</SelectItem>
+                <SelectItem value="ja">Japanese</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Wiki pages will include a side-by-side translation in the selected language.
+            </p>
           </div>
 
           {scopeType === "project" && (
