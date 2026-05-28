@@ -347,6 +347,7 @@ export default function WikiGraphPage() {
                 contentMdTranslated={previewData.content_md_translated ?? null}
                 sourceLanguage={previewData.source_language ?? null}
                 targetLanguage={previewData.target_language ?? null}
+                hideSideBySide
               />
             ) : (
               <p className="text-sm text-muted-foreground py-16 text-center">Failed to load content.</p>

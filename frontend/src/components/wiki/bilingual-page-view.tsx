@@ -15,6 +15,7 @@ interface Props {
   sourceLanguage: string | null;
   targetLanguage: string | null;
   linkSuffix?: string;
+  hideSideBySide?: boolean;
 }
 
 export function BilingualPageView({
@@ -25,9 +26,10 @@ export function BilingualPageView({
   sourceLanguage,
   targetLanguage,
   linkSuffix = "",
+  hideSideBySide = false,
 }: Props) {
   const bilingual = !!(titleTranslated && contentMdTranslated);
-  const [mode, setMode] = useState<Mode>("side");
+  const [mode, setMode] = useState<Mode>(hideSideBySide ? "target" : "side");
 
   useEffect(() => {
     if (!bilingual) {
@@ -38,10 +40,12 @@ export function BilingualPageView({
       typeof window !== "undefined"
         ? (window.localStorage.getItem(STORAGE_KEY) as Mode | null)
         : null;
-    if (stored === "source" || stored === "target" || stored === "side") {
+    if (stored === "source" || stored === "target" || (stored === "side" && !hideSideBySide)) {
       setMode(stored);
+    } else if (stored === "side" && hideSideBySide) {
+      setMode("target");
     }
-  }, [bilingual]);
+  }, [bilingual, hideSideBySide]);
 
   const onModeChange = (m: string) => {
     const next = m as Mode;
@@ -65,7 +69,9 @@ export function BilingualPageView({
           <TabsList>
             <TabsTrigger value="source">Source</TabsTrigger>
             <TabsTrigger value="target">Translated</TabsTrigger>
-            <TabsTrigger value="side">Side-by-side</TabsTrigger>
+            {!hideSideBySide && (
+              <TabsTrigger value="side">Side-by-side</TabsTrigger>
+            )}
           </TabsList>
         </Tabs>
       </div>

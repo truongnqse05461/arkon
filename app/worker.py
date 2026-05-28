@@ -1380,6 +1380,16 @@ async def backfill_translate_pages_task(
             translated += 1
             await session.commit()
 
+        if translated > 0:
+            from app.services import wiki_service
+
+            await wiki_service.regenerate_index(
+                session,
+                scope_type=scope_type,
+                scope_id=uuid.UUID(scope_id) if scope_id else None,
+            )
+            await session.commit()
+
     logger.success(
         f"Translation backfill complete: translated={translated} "
         f"skipped={skipped} failed={failed}"

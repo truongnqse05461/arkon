@@ -654,7 +654,14 @@ async def regenerate_index(
     Grouped by page_type, alphabetical within group. Excludes reserved slugs.
     """
     stmt = (
-        select(WikiPage.slug, WikiPage.title, WikiPage.page_type, WikiPage.summary)
+        select(
+            WikiPage.slug,
+            WikiPage.title,
+            WikiPage.page_type,
+            WikiPage.summary,
+            WikiPage.title_translated,
+            WikiPage.summary_translated,
+        )
         .where(
             WikiPage.slug.notin_([INDEX_SLUG, LOG_SLUG]),
             _scope_filter(scope_type, scope_id),
@@ -663,9 +670,11 @@ async def regenerate_index(
     )
     rows = (await session.execute(stmt)).all()
 
-    by_type: dict[str, list[tuple[str, str, str]]] = {}
+    by_type: dict[str, list[tuple[str, str, str, Optional[str], Optional[str]]]] = {}
     for r in rows:
-        by_type.setdefault(r.page_type, []).append((r.slug, r.title, r.summary or ""))
+        by_type.setdefault(r.page_type, []).append(
+            (r.slug, r.title, r.summary or "", r.title_translated, r.summary_translated)
+        )
 
     lines = ["# Wiki Index", ""]
     if not by_type:
@@ -674,9 +683,15 @@ async def regenerate_index(
         for ptype in sorted(by_type.keys()):
             lines.append(f"## {ptype.capitalize()}")
             lines.append("")
-            for slug, title, summary in by_type[ptype]:
+            for slug, title, summary, title_tr, summary_tr in by_type[ptype]:
                 summary_part = f" — {summary}" if summary else ""
-                lines.append(f"- [[{slug}|{title}]]{summary_part}")
+                lines.append(f"- [[{slug}|{title}]]{summary_part}  ")
+                has_tr_title = title_tr and title_tr != title
+                has_tr_summary = summary_tr and summary_tr != summary
+                if has_tr_title or has_tr_summary:
+                    tr_title = title_tr if has_tr_title else title
+                    tr_summary_part = f" — {summary_tr}" if has_tr_summary else ""
+                    lines.append(f"  _{tr_title}{tr_summary_part}_")
             lines.append("")
 
     new_md = "\n".join(lines).rstrip() + "\n"

@@ -157,6 +157,7 @@ export function CitationPanel({ slug, onClose }: CitationPanelProps) {
                 contentMdTranslated={page.content_md_translated ?? null}
                 sourceLanguage={page.source_language ?? null}
                 targetLanguage={page.target_language ?? null}
+                hideSideBySide
               />
             </div>
           )}
