@@ -16,6 +16,7 @@ from loguru import logger
 
 from app.ai.providers.base import LLMProvider
 from app.ai.mrp.writer import PageWriteResult
+from app.config import settings
 from app.utils.text import parse_json_loose
 
 TRANSLATOR_TIMEOUT = 180
@@ -118,13 +119,14 @@ def validate_translation(src_content: str, output: TranslationOutput) -> None:
     if not output.title or not output.summary or not output.content_md:
         raise InvalidTranslationError("Empty title, summary, or content_md")
 
-    src_len = max(len(src_content), 1)
-    tgt_len = len(output.content_md)
-    ratio = tgt_len / src_len
-    if ratio < _LENGTH_MIN_RATIO or ratio > _LENGTH_MAX_RATIO:
-        raise InvalidTranslationError(
-            f"content_md length ratio {ratio:.2f} outside [{_LENGTH_MIN_RATIO}, {_LENGTH_MAX_RATIO}]"
-        )
+    if settings.translation_length_ratio_check_enabled:
+        src_len = max(len(src_content), 1)
+        tgt_len = len(output.content_md)
+        ratio = tgt_len / src_len
+        if ratio < _LENGTH_MIN_RATIO or ratio > _LENGTH_MAX_RATIO:
+            raise InvalidTranslationError(
+                f"content_md length ratio {ratio:.2f} outside [{_LENGTH_MIN_RATIO}, {_LENGTH_MAX_RATIO}]"
+            )
 
     src_links = len(WIKILINK_RE.findall(src_content))
     tgt_links = len(WIKILINK_RE.findall(output.content_md))

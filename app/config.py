@@ -95,6 +95,15 @@ class Settings(BaseSettings):
         default=True,
         description="Enable optional TRANSLATE phase in the MRP pipeline",
     )
+    translation_length_ratio_check_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enforce the translated content_md length ratio bounds in validate_translation. "
+            "Disable to accept translations that are much shorter or longer than the source "
+            "(e.g. when an LLM legitimately compresses verbose source text). Wikilink and "
+            "citation count checks remain active either way."
+        ),
+    )
     translation_model_spec_id: str | None = Field(
         default=None,
         description="LLM spec_id for translation calls; null = use the writer LLM",
