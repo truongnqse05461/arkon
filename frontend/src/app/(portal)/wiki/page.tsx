@@ -349,17 +349,32 @@ export default function WikiIndexPage() {
                             {page.scope_type && page.scope_type !== "global" && (
                               <ScopeBadge scopeType={page.scope_type} scopeId={page.scope_id} />
                             )}
+                            {page.target_language && (
+                              <span className="inline-flex items-center rounded border border-border text-[10px] font-medium h-4 px-1.5 text-muted-foreground">
+                                {(page.source_language ?? "??").toUpperCase()} → {page.target_language.toUpperCase()}
+                              </span>
+                            )}
                           </div>
                           <span className="text-xs text-muted-foreground shrink-0">
                             v{page.version}
                           </span>
                         </div>
-                        <h3 className="font-heading text-base font-normal text-foreground group-hover:text-primary transition-colors mb-1">
+                        <h3 className="font-heading text-base font-normal text-foreground group-hover:text-primary transition-colors mb-0.5">
                           {page.title}
                         </h3>
+                        {page.title_translated && page.title_translated !== page.title && (
+                          <p className="text-xs text-muted-foreground mb-1">
+                            {page.title_translated}
+                          </p>
+                        )}
                         {page.summary && (
-                          <p className="text-xs text-muted-foreground line-clamp-2">
+                          <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
                             {page.summary}
+                          </p>
+                        )}
+                        {page.summary_translated && page.summary_translated !== page.summary && (
+                          <p className="text-xs text-muted-foreground/70 line-clamp-2 mt-0.5 italic">
+                            {page.summary_translated}
                           </p>
                         )}
                         <p className="text-xs text-muted-foreground mt-3">

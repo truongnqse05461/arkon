@@ -979,7 +979,14 @@ async def get_workspace_wiki_graph(
     from app.services import wiki_service
 
     pages = (await db.execute(
-        select(WikiPage.slug, WikiPage.title, WikiPage.page_type)
+        select(
+            WikiPage.slug,
+            WikiPage.title,
+            WikiPage.page_type,
+            WikiPage.title_translated,
+            WikiPage.source_language,
+            WikiPage.target_language,
+        )
         .where(
             WikiPage.scope_type == "project",
             WikiPage.scope_id == pid,
@@ -999,7 +1006,17 @@ async def get_workspace_wiki_graph(
     )).all()
 
     return {
-        "nodes": [{"slug": r.slug, "title": r.title, "page_type": r.page_type} for r in pages],
+        "nodes": [
+            {
+                "slug": r.slug,
+                "title": r.title,
+                "page_type": r.page_type,
+                "title_translated": r.title_translated,
+                "source_language": r.source_language,
+                "target_language": r.target_language,
+            }
+            for r in pages
+        ],
         "edges": [
             {"from": r.from_slug, "to": r.to_slug}
             for r in edges

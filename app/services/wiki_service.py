@@ -240,11 +240,25 @@ async def get_neighborhood(
         return {"nodes": [], "edges": []}
 
     pages_result = await session.execute(
-        select(WikiPage.slug, WikiPage.title, WikiPage.page_type)
+        select(
+            WikiPage.slug,
+            WikiPage.title,
+            WikiPage.page_type,
+            WikiPage.title_translated,
+            WikiPage.source_language,
+            WikiPage.target_language,
+        )
         .where(WikiPage.slug.in_(slugs))
     )
     nodes = [
-        {"slug": r.slug, "title": r.title, "page_type": r.page_type}
+        {
+            "slug": r.slug,
+            "title": r.title,
+            "page_type": r.page_type,
+            "title_translated": r.title_translated,
+            "source_language": r.source_language,
+            "target_language": r.target_language,
+        }
         for r in pages_result.all()
     ]
     edges_result = await session.execute(

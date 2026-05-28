@@ -12,6 +12,11 @@ export type WikiPageSummary = {
   scope_name?: string | null;
   version: number;
   updated_at: string;
+  source_language?: string | null;
+  target_language?: string | null;
+  title_translated?: string | null;
+  summary_translated?: string | null;
+  translation_status?: string | null;
 };
 
 export type WikiScope = {
@@ -25,12 +30,7 @@ export type WikiPageDetail = WikiPageSummary & {
   backlinks: string[];
   outlinks: string[];
   orphaned?: boolean;
-  source_language?: string | null;
-  target_language?: string | null;
-  title_translated?: string | null;
-  summary_translated?: string | null;
   content_md_translated?: string | null;
-  translation_status?: string | null;
 };
 
 export type WikiGraphNode = {
@@ -40,6 +40,9 @@ export type WikiGraphNode = {
   scope_type?: string;
   scope_id?: string | null;
   scope_name?: string | null;
+  title_translated?: string | null;
+  source_language?: string | null;
+  target_language?: string | null;
   // injected by d3-force simulation
   x?: number;
   y?: number;

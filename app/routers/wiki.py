@@ -53,6 +53,11 @@ class WikiPageSummary(BaseModel):
     scope_name: Optional[str] = None
     version: int
     updated_at: str
+    source_language: Optional[str] = None
+    target_language: Optional[str] = None
+    title_translated: Optional[str] = None
+    summary_translated: Optional[str] = None
+    translation_status: Optional[str] = None
 
 
 class WikiScope(BaseModel):
@@ -152,6 +157,11 @@ def _summary(p: WikiPage, scope_name: Optional[str] = None) -> WikiPageSummary:
         scope_name=scope_name,
         version=p.version or 1,
         updated_at=p.updated_at.isoformat() if p.updated_at else "",
+        source_language=getattr(p, "source_language", None),
+        target_language=getattr(p, "target_language", None),
+        title_translated=getattr(p, "title_translated", None),
+        summary_translated=getattr(p, "summary_translated", None),
+        translation_status=getattr(p, "translation_status", None),
     )
 
 
@@ -162,12 +172,7 @@ def _detail(p: WikiPage, backlinks: list[str], outlinks: list[str]) -> WikiPageD
         backlinks=sorted(backlinks),
         outlinks=sorted(outlinks),
         orphaned=p.orphaned or False,
-        source_language=getattr(p, "source_language", None),
-        target_language=getattr(p, "target_language", None),
-        title_translated=getattr(p, "title_translated", None),
-        summary_translated=getattr(p, "summary_translated", None),
         content_md_translated=getattr(p, "content_md_translated", None),
-        translation_status=getattr(p, "translation_status", None),
     )
 
 
@@ -687,6 +692,9 @@ async def get_wiki_graph(
             WikiPage.page_type,
             WikiPage.scope_type,
             WikiPage.scope_id,
+            WikiPage.title_translated,
+            WikiPage.source_language,
+            WikiPage.target_language,
             case(
                 (WikiPage.scope_type == "project", Project.name),
                 (WikiPage.scope_type == "department", Department.name),
@@ -725,6 +733,9 @@ async def get_wiki_graph(
                 "scope_type": r.scope_type or "global",
                 "scope_id": str(r.scope_id) if r.scope_id else None,
                 "scope_name": r.scope_name,
+                "title_translated": r.title_translated,
+                "source_language": r.source_language,
+                "target_language": r.target_language,
             }
             for r in pages
         ],

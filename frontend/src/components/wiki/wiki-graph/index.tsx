@@ -170,6 +170,7 @@ export function WikiGraph({
     x: number;
     y: number;
     title: string;
+    titleSource?: string | null;
     type: string;
     degree: number;
     scopeType?: string;
@@ -213,6 +214,9 @@ export function WikiGraph({
         existing.page_type = n.page_type;
         existing.scope_type = n.scope_type;
         existing.scope_name = n.scope_name;
+        existing.title_translated = n.title_translated;
+        existing.source_language = n.source_language;
+        existing.target_language = n.target_language;
         existing.degree = degree;
         return existing;
       }
@@ -433,7 +437,8 @@ export function WikiGraph({
         ctx.globalAlpha = isHovered || isCenter ? 1 : 0.7;
         ctx.textBaseline = "middle";
         ctx.textAlign = "left";
-        const text = n.title.length > 24 ? n.title.slice(0, 22) + "…" : n.title;
+        const label = n.title_translated || n.title;
+        const text = label.length > 24 ? label.slice(0, 22) + "…" : label;
         ctx.fillText(text, n.x + r + 5, n.y);
         ctx.globalAlpha = 1;
       }
@@ -499,9 +504,11 @@ export function WikiGraph({
     if (!n) {
       setTooltip(null);
     } else {
+      const label = n.title_translated || n.title;
       setTooltip((prev) => ({
         ...(prev ?? { x: 0, y: 0 }),
-        title: n.title,
+        title: label,
+        titleSource: label !== n.title ? n.title : null,
         type: n.page_type,
         degree: n.degree ?? 0,
         scopeType: n.scope_type,
@@ -600,6 +607,9 @@ export function WikiGraph({
           }}
         >
           <p className="font-medium text-sm mb-0.5 truncate">{tooltip.title}</p>
+          {tooltip.titleSource && (
+            <p className="text-[11px] text-muted-foreground/70 mb-0.5 truncate">{tooltip.titleSource}</p>
+          )}
           <div className="flex items-center gap-2 text-muted-foreground">
             <span
               className="w-2 h-2 rounded-full shrink-0"

@@ -21,4 +21,7 @@ export type NodeInput = {
   scope_type?: string;
   scope_id?: string | null;
   scope_name?: string | null;
+  title_translated?: string | null;
+  source_language?: string | null;
+  target_language?: string | null;
 };
