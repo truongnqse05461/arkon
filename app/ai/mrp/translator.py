@@ -18,10 +18,17 @@ from app.ai.providers.base import LLMProvider
 from app.ai.mrp.writer import PageWriteResult
 from app.utils.text import parse_json_loose
 
-TRANSLATOR_TIMEOUT = 120
+TRANSLATOR_TIMEOUT = 180
 TRANSLATOR_MAX_CONCURRENCY = 4
+# Allow enough output budget for ~2x source content_md + title + summary + tag
+# overhead. Without this, providers default to 1024–4096 tokens and truncate
+# mid-translation, producing partial responses that fail tag parsing.
+TRANSLATOR_MAX_TOKENS = 8192
 _LENGTH_MIN_RATIO = 0.5
-_LENGTH_MAX_RATIO = 2.0
+# Sized to accommodate logographic→alphabetic pairs (e.g. ZH→VI), where a
+# faithful translation is structurally 2.5–3.5× the source character count.
+# Still catches runaway repetition / hallucinated padding.
+_LENGTH_MAX_RATIO = 4.0
 
 WIKILINK_RE = re.compile(r"\[\[[^\]]+\]\]")
 CITATION_RE = re.compile(r"【[^】]+】")
@@ -39,7 +46,8 @@ class InvalidTranslationError(ValueError):
 
 
 TRANSLATOR_SYSTEM = (
-    "You are a precise technical translator. Return ONLY valid JSON. "
+    "You are a precise technical translator. Return ONLY the tagged blocks "
+    "described in the user prompt — no commentary, no surrounding code fences. "
     "Preserve markdown structure, wikilinks, citation brackets, and code blocks verbatim."
 )
 
@@ -64,13 +72,45 @@ Summary: {summary}
 Content:
 {content_md}
 
-Return JSON with this exact shape and nothing else:
-{{
-  "title": "<translated title>",
-  "summary": "<translated summary>",
-  "content_md": "<translated content_md>"
-}}
+Output your translation using EXACTLY this format and nothing else. The content
+inside <content_md> is raw markdown — do NOT escape characters, do NOT wrap the
+markdown in an outer code fence, do NOT add JSON quoting:
+
+<title>translated title here</title>
+<summary>translated summary here</summary>
+<content_md>
+translated markdown body here
+</content_md>
 """
+
+_TITLE_RE = re.compile(r"<title>(.*?)</title>", re.DOTALL | re.IGNORECASE)
+_SUMMARY_RE = re.compile(r"<summary>(.*?)</summary>", re.DOTALL | re.IGNORECASE)
+_CONTENT_RE = re.compile(r"<content_md>\s*(.*?)\s*</content_md>", re.DOTALL | re.IGNORECASE)
+
+
+def _parse_tagged(raw: str) -> Optional[TranslationOutput]:
+    t = _TITLE_RE.search(raw)
+    s = _SUMMARY_RE.search(raw)
+    c = _CONTENT_RE.search(raw)
+    if not (t and s and c):
+        return None
+    return TranslationOutput(
+        title=t.group(1).strip(),
+        summary=s.group(1).strip(),
+        content_md=c.group(1).strip(),
+    )
+
+
+def _parse_json_fallback(raw: str) -> Optional[TranslationOutput]:
+    try:
+        data = parse_json_loose(raw)
+        return TranslationOutput(
+            title=data["title"],
+            summary=data["summary"],
+            content_md=data["content_md"],
+        )
+    except Exception:
+        return None
 
 
 def validate_translation(src_content: str, output: TranslationOutput) -> None:
@@ -117,22 +157,25 @@ async def translate_page(
     )
     try:
         raw = await asyncio.wait_for(
-            llm.generate(prompt, system=TRANSLATOR_SYSTEM, temperature=0.1),
+            llm.generate(
+                prompt,
+                system=TRANSLATOR_SYSTEM,
+                temperature=0.1,
+                max_tokens=TRANSLATOR_MAX_TOKENS,
+            ),
             timeout=TRANSLATOR_TIMEOUT,
         )
     except asyncio.TimeoutError:
         logger.warning(f"Translate timeout for page slug={page.slug}")
         return None
 
-    try:
-        data = parse_json_loose(raw)
-        output = TranslationOutput(
-            title=data["title"],
-            summary=data["summary"],
-            content_md=data["content_md"],
+    output = _parse_tagged(raw) or _parse_json_fallback(raw)
+    if output is None:
+        logger.warning(
+            f"Translate parse failed for slug={page.slug}: "
+            f"no <title>/<summary>/<content_md> tags or valid JSON found. "
+            f"Raw response head: {raw[:500]!r}"
         )
-    except Exception as exc:
-        logger.warning(f"Translate JSON parse failed for slug={page.slug}: {exc}")
         return None
 
     try:
