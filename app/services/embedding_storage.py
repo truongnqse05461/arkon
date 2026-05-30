@@ -110,5 +110,34 @@ async def cleanup_stale_embeddings(
     return total
 
 
+async def delete_page_embedding(
+    session: AsyncSession,
+    page_id: uuid.UUID,
+    language: str = "target",
+) -> None:
+    """Delete a page's (language) embedding row from every per-dimension table.
+
+    Used when a translation is removed or replaced so stale vectors don't
+    linger. Re-translation only ever removes the ``"target"`` slot; the
+    ``"source"`` row is left untouched.
+    """
+    from app.database.models import (
+        WikiPageEmbedding768,
+        WikiPageEmbedding1024,
+        WikiPageEmbedding1536,
+        WikiPageEmbedding3072,
+    )
+
+    for Model in (
+        WikiPageEmbedding768,
+        WikiPageEmbedding1024,
+        WikiPageEmbedding1536,
+        WikiPageEmbedding3072,
+    ):
+        await session.execute(
+            delete(Model).where(Model.page_id == page_id, Model.language == language)
+        )
+
+
 def get_spec_for_job(job: EmbeddingJob) -> EmbeddingModelSpec:
     return get_spec(job.model_spec_id)

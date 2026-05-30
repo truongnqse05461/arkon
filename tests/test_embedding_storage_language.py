@@ -55,3 +55,19 @@ async def test_upsert_page_embedding_passes_language():
     stmt = session.execute.await_args.args[0]
     compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
     assert "'vi'" in compiled
+
+
+@pytest.mark.asyncio
+async def test_delete_page_embedding_targets_language_across_dims():
+    """Deletes the (page, language) row from every per-dimension table."""
+    from app.services.embedding_storage import delete_page_embedding
+
+    session = AsyncMock()
+    await delete_page_embedding(session, uuid.uuid4(), language="target")
+
+    # One DELETE per per-dimension table (768 / 1024 / 1536 / 3072).
+    assert session.execute.await_count == 4
+    stmt = session.execute.await_args_list[0].args[0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "DELETE FROM" in compiled.upper()
+    assert "'target'" in compiled
