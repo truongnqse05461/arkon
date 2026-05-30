@@ -1271,17 +1271,10 @@ async def backfill_translate_pages_task(
     embedding logic as the MRP pipeline.
     """
     from app.ai.embedding_catalog import get_spec
-    from app.ai.mrp.translator import translate_page
-    from app.ai.mrp.writer import PageWriteResult
     from app.ai.registry import ProviderRegistry
     from app.database import async_session_factory
     from app.database.models import WikiPage
-    from app.services.embedding_storage import (
-        compute_content_hash,
-        embedding_input_text,
-        upsert_page_embedding,
-    )
-    from app.services.language_detection import detect_language
+    from app.services.retranslation import DONE, FAILED, retranslate_page
 
     _ = ctx
     translated = 0
@@ -1315,69 +1308,15 @@ async def backfill_translate_pages_task(
         )
 
         for page in pages:
-            src_lang = page.source_language
-            if not src_lang:
-                code, conf = detect_language(page.content_md or "")
-                if conf >= settings.language_detection_min_confidence:
-                    src_lang = code
-
-            if not src_lang or src_lang == target_language:
-                page.translation_status = "skipped"
-                page.target_language = target_language
-                skipped += 1
-                await session.commit()
-                continue
-
-            stub = PageWriteResult(
-                slug=page.slug,
-                title=page.title,
-                page_type=page.page_type,
-                action="UPDATE",
-                content_md=page.content_md or "",
-                summary=page.summary or "",
+            outcome = await retranslate_page(
+                session, page, target_language, None, llm, embedder, active_spec
             )
-            try:
-                output = await translate_page(llm, stub, src_lang, target_language)
-            except Exception as exc:
-                logger.warning(f"backfill_translate: {page.slug} raised {exc}")
-                output = None
-
-            if output is None:
-                page.translation_status = "failed"
-                page.target_language = target_language
+            if outcome == DONE:
+                translated += 1
+            elif outcome == FAILED:
                 failed += 1
-                await session.commit()
-                continue
-
-            page.source_language = src_lang
-            page.target_language = target_language
-            page.title_translated = output.title
-            page.summary_translated = output.summary
-            page.content_md_translated = output.content_md
-            page.translation_status = "done"
-
-            if embedder is not None and active_spec is not None:
-                try:
-                    tgt_text = embedding_input_text(
-                        output.title, output.summary, output.content_md
-                    )
-                    tgt_vec = await embedder.embed(tgt_text)
-                    await upsert_page_embedding(
-                        session,
-                        page.id,
-                        active_spec,
-                        tgt_vec,
-                        compute_content_hash(
-                            output.title, output.summary, output.content_md
-                        ),
-                        language="target",
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        f"backfill_translate: target embed failed for {page.slug}: {exc}"
-                    )
-
-            translated += 1
+            else:  # SKIPPED (REMOVED can't occur — target_language is non-null here)
+                skipped += 1
             await session.commit()
 
         if translated > 0:
