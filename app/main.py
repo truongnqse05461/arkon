@@ -193,6 +193,7 @@ from app.routers import (  # noqa: E402
     auth,
     chat,
     knowledge_types,
+    mindmap,
     notes,
     notifications,
     oauth,
@@ -228,6 +229,7 @@ app.include_router(skills.router, prefix="/api", tags=["skills"])
 app.include_router(skill_contributions.router, prefix="/api", tags=["skill-contributions"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
+app.include_router(mindmap.router, prefix="/api", tags=["mindmap"])
 
 
 @app.get("/")
