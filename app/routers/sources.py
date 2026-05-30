@@ -102,6 +102,15 @@ class SourceUpdate(BaseModel):
     scope_id: Optional[uuid.UUID] = None
 
 
+class RetranslateRequest(BaseModel):
+    target_language: Optional[str] = None   # ISO 639-1; null = remove translation
+    source_language: Optional[str] = None   # null = keep stored/auto-detected
+
+
+# Curated set the UI offers; keeps junk codes out of the translator.
+_RETRANSLATE_LANGS = {"vi", "en", "zh", "ja"}
+
+
 async def _wiki_page_count(session: AsyncSession, source_id: uuid.UUID) -> int:
     """How many wiki pages reference this source in their source_ids array."""
     stmt = select(func.count()).select_from(WikiPage).where(WikiPage.source_ids.any(source_id))  # type: ignore[arg-type]
@@ -629,6 +638,70 @@ async def retry_source(
     )).scalar_one()
     logger.info(f"Queued retry job {job.job_id if job else 'N/A'} for source {source_id}")
     return _to_response(source)
+
+
+@router.post("/sources/{source_id}/retranslate", response_model=SourceResponse)
+async def retranslate_source(
+    source_id: uuid.UUID,
+    body: RetranslateRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("doc:edit"),
+):
+    """Re-run translation for a ready source: add, change, or remove its target
+    language (optionally correcting the detected source language)."""
+    if not settings.translation_enabled:
+        raise HTTPException(status_code=400, detail="Translation is disabled")
+
+    source = (await db.execute(
+        select(Source)
+        .options(*_source_load_options())
+        .where(Source.id == source_id)
+    )).scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    if source.status != "ready":
+        raise HTTPException(
+            status_code=400,
+            detail="Re-translation is only allowed for sources in 'ready' status",
+        )
+    if await _wiki_page_count(db, source_id) == 0:
+        raise HTTPException(status_code=400, detail="Source has no wiki pages to translate")
+
+    target = (body.target_language or "").strip().lower() or None
+    override = (body.source_language or "").strip().lower() or None
+    if target and target not in _RETRANSLATE_LANGS:
+        raise HTTPException(status_code=400, detail=f"Unsupported target_language: {target}")
+    if override and override not in _RETRANSLATE_LANGS:
+        raise HTTPException(status_code=400, detail=f"Unsupported source_language: {override}")
+
+    effective_source = override or source.source_language
+    if target and effective_source and target == effective_source:
+        raise HTTPException(status_code=400, detail="Source and target language must differ.")
+
+    source.target_language = target
+    if override:
+        source.source_language = override
+    source.status = "translating"
+    source.progress = 0
+    source.progress_message = "Re-translating…"
+    source.error_message = None
+    await db.flush()
+
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job(
+        "retranslate_source_task", str(source_id), target, override
+    )
+    if job:
+        source.job_id = job.job_id
+    await db.commit()
+
+    source = (await db.execute(
+        select(Source)
+        .options(*_source_load_options())
+        .where(Source.id == source_id)
+    )).scalar_one()
+    logger.info(f"Queued retranslate job {job.job_id if job else 'N/A'} for source {source_id}")
+    return _to_response(source, await _wiki_page_count(db, source_id))
 
 
 # ---------------------------------------------------------------------------
