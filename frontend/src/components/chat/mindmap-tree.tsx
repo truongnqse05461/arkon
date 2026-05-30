@@ -20,9 +20,9 @@ const NODE_TEXT = "#2a4a7a";
 const EDGE_COLOR = "#b0a8d0";
 
 function renderNode({ nodeDatum, toggleNode }: CustomNodeElementProps) {
-  const isRoot = nodeDatum.__rd3t.depth === 0;
+  const isRoot = (nodeDatum.__rd3t?.depth ?? 0) === 0;
   const hasChildren = Array.isArray(nodeDatum.children) && nodeDatum.children.length > 0;
-  const isCollapsed = nodeDatum.__rd3t.collapsed;
+  const isCollapsed = nodeDatum.__rd3t?.collapsed ?? false;
   const label: string = nodeDatum.name;
   const charWidth = isRoot ? 9 : 8;
   const nodeWidth = Math.max(90, label.length * charWidth + (hasChildren ? 32 : 20));
@@ -92,7 +92,7 @@ export function MindMapTree({ tree }: MindMapTreeProps) {
           pathFunc="diagonal"
           translate={translate}
           zoom={zoom}
-          onUpdate={({ zoom: z }) => setZoom(z)}
+          onUpdate={({ zoom: z }: { zoom: number }) => setZoom(Math.min(Math.max(z, 0.2), 3))}
           renderCustomNodeElement={renderNode}
           separation={{ siblings: 1.3, nonSiblings: 1.8 }}
           nodeSize={{ x: 240, y: 52 }}
