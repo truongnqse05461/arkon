@@ -5,6 +5,7 @@ export function StatusDot({ source }: { source: Source }) {
   const colors: Record<string, string> = {
     ready: "bg-green-500",
     processing: "bg-yellow-500",
+    translating: "bg-indigo-500",
     error: "bg-destructive",
     pending: "bg-muted-foreground",
     plan_ready: "bg-blue-500",
@@ -26,11 +27,11 @@ export function StatusDot({ source }: { source: Source }) {
         <span className={`text-xs capitalize ${highlight ? (status === "plan_ready" ? "text-blue-500 font-medium" : "text-orange-500 font-medium") : "text-muted-foreground"}`}>
           {labels[status] ?? status}
         </span>
-        {status === "processing" && source.progress !== undefined && (
+        {(status === "processing" || status === "translating") && source.progress !== undefined && (
           <span className="text-xs text-muted-foreground">({source.progress}%)</span>
         )}
       </div>
-      {(status === "processing" || status === "pending") && source.progress_message && (
+      {(status === "processing" || status === "pending" || status === "translating") && source.progress_message && (
         <span className="text-[10px] text-muted-foreground truncate max-w-[150px]" title={source.progress_message}>
           {source.progress_message}
         </span>
