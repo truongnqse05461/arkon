@@ -26,6 +26,7 @@ import { KnowledgeType, Department, Source } from "./types";
 import { fileIcons, getFileExt } from "./utils";
 import { StatusDot } from "./status-dot";
 import { EditSourceDialog } from "./edit-source-dialog";
+import { RetranslateDialog } from "./retranslate-dialog";
 import { PlanReviewDialog } from "./plan-review-dialog";
 import { ExtractionReviewDialog } from "./extraction-review-dialog";
 
@@ -58,6 +59,7 @@ export function KnowledgeTable({
 }: Props) {
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [editSource, setEditSource] = React.useState<Source | null>(null);
+  const [retranslateSource, setRetranslateSource] = React.useState<Source | null>(null);
   const [reviewPlanSource, setReviewPlanSource] = React.useState<Source | null>(null);
   const [reviewExtractionSource, setReviewExtractionSource] = React.useState<Source | null>(null);
   const [retryingIds, setRetryingIds] = React.useState<Set<string>>(new Set());
@@ -274,6 +276,14 @@ export function KnowledgeTable({
                           <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>edit</span>
                           Edit
                         </DropdownMenuItem>
+                        {source.status === "ready" && (
+                          <DropdownMenuItem onClick={() => setRetranslateSource(source)}>
+                            <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>
+                              translate
+                            </span>
+                            Re-translate
+                          </DropdownMenuItem>
+                        )}
                         {source.status === "plan_ready" && (
                           <DropdownMenuItem onClick={() => setReviewPlanSource(source)}>
                             <span className="material-symbols-outlined mr-2 text-blue-500" style={{ fontSize: 16 }}>
@@ -378,6 +388,14 @@ export function KnowledgeTable({
           departments={departments}
           onClose={() => setEditSource(null)}
           onSaved={() => { setEditSource(null); onRefresh(); }}
+        />
+      )}
+
+      {retranslateSource && (
+        <RetranslateDialog
+          source={retranslateSource}
+          onClose={() => setRetranslateSource(null)}
+          onDone={() => { setRetranslateSource(null); onRefresh(); }}
         />
       )}
 
