@@ -96,8 +96,13 @@ async def generate_mindmap(
             .removesuffix("```")
             .strip()
         )
-        tree = json.loads(cleaned)
+        try:
+            tree = json.loads(cleaned)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"LLM returned unparseable JSON: {exc}") from exc
 
+    if not isinstance(tree, dict):
+        raise ValueError(f"LLM returned unexpected JSON shape: {type(tree).__name__}")
     title = str(tree.get("name", "Knowledge Base"))
 
     existing = await get_mindmap(db, scope_type, scope_id)
