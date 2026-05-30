@@ -97,8 +97,32 @@ export function MindMapPanel() {
   }, []);
 
   useEffect(() => {
-    loadMindmap(selectedScope);
-  }, [selectedScope, loadMindmap]);
+    let cancelled = false;
+    async function run() {
+      setStatus("loading");
+      setMindmap(null);
+      setErrorMsg(null);
+      try {
+        const data = await api<MindmapData>(`/api/mindmap?${scopeToParams(selectedScope)}`);
+        if (!cancelled) {
+          setMindmap(data);
+          setStatus("ready");
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          const apiErr = err as { status?: number; message?: string };
+          if (apiErr?.status === 404) {
+            setStatus("empty");
+          } else {
+            setStatus("error");
+            setErrorMsg(apiErr?.message ?? "Failed to load MindMap.");
+          }
+        }
+      }
+    }
+    run();
+    return () => { cancelled = true; };
+  }, [selectedScope]);
 
   const handleGenerate = useCallback(async () => {
     setStatus("generating");
