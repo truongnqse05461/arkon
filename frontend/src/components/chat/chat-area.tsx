@@ -6,6 +6,7 @@ import type { UIMessage, Message } from "ai";
 import { MessageList } from "./message-list";
 import { ChatInput } from "./chat-input";
 import { CitationPanel } from "./citation-panel";
+import { MindMapPanel } from "./mindmap-panel";
 import type { Attachment } from "./attachment-picker";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5055";
@@ -55,7 +56,8 @@ export function ChatArea({
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex flex-col min-h-0">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border flex items-center gap-3 shrink-0">
         <span className="font-semibold text-sm text-foreground flex-1 truncate">
@@ -96,6 +98,8 @@ export function ChatArea({
 
       {/* Citation slide-out panel */}
       <CitationPanel slug={selectedSlug} onClose={() => setSelectedSlug(null)} />
+      </div>
+      <MindMapPanel />
     </div>
   );
 }
