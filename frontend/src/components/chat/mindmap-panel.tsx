@@ -49,7 +49,11 @@ function scopeToParams(scope: Scope): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export function MindMapPanel() {
+type MindMapPanelProps = {
+  onNodeClick?: (name: string) => void;
+};
+
+export function MindMapPanel({ onNodeClick }: MindMapPanelProps) {
   const [panelState, setPanelState] = useState<PanelState>("open");
   const [scopes, setScopes] = useState<Scope[]>([]);
   const [selectedScope, setSelectedScope] = useState<Scope>({ type: "global", id: null, label: "Global" });
@@ -157,6 +161,11 @@ export function MindMapPanel() {
     const found = scopes.find((s) => s.type === type && (s.id ?? "") === (id ?? ""));
     if (found) setSelectedScope(found);
   }, [scopes]);
+
+  const handleNodeClick = useCallback((name: string) => {
+    if (panelState === "fullscreen") setPanelState("open");
+    onNodeClick?.(name);
+  }, [panelState, onNodeClick]);
 
   const scopeValue = `${selectedScope.type}|${selectedScope.id ?? ""}`;
   const isGenerating = status === "generating";
@@ -302,7 +311,7 @@ export function MindMapPanel() {
     // ready
     return (
       <div className="flex-1 min-h-0 overflow-hidden">
-        {mindmap && <MindMapTree tree={mindmap.tree_json} />}
+        {mindmap && <MindMapTree tree={mindmap.tree_json} onNodeClick={handleNodeClick} />}
       </div>
     );
   };
