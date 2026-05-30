@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { CustomNodeElementProps, RawNodeDatum } from "react-d3-tree";
 
@@ -78,6 +78,7 @@ export function MindMapTree({ tree, onNodeClick }: MindMapTreeProps) {
   const [translate, setTranslate] = useState({ x: 60, y: 200 });
   const [zoom, setZoom] = useState(0.85);
   const [ready, setReady] = useState(false);
+  const renderNode = useMemo(() => makeRenderNode(onNodeClick), [onNodeClick]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -97,7 +98,7 @@ export function MindMapTree({ tree, onNodeClick }: MindMapTreeProps) {
           translate={translate}
           zoom={zoom}
           onUpdate={({ zoom: z }: { zoom: number }) => setZoom(Math.min(Math.max(z, 0.2), 3))}
-          renderCustomNodeElement={makeRenderNode(onNodeClick)}
+          renderCustomNodeElement={renderNode}
           separation={{ siblings: 1.3, nonSiblings: 1.8 }}
           nodeSize={{ x: 240, y: 52 }}
           collapsible
