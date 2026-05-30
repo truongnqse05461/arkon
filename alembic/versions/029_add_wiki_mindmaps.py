@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.create_table(
         "wiki_mindmaps",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True),
+        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("scope_type", sa.String(20), nullable=False),
         sa.Column("scope_id", UUID(as_uuid=True), nullable=True),
         sa.Column("title", sa.String(500), nullable=False, server_default="Knowledge Base"),

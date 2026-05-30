@@ -1,7 +1,8 @@
 """Mindmap router — GET cached mindmap, POST generate, DELETE."""
 
 import uuid
-from typing import Optional
+from datetime import datetime
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -22,19 +23,19 @@ class MindmapResponse(BaseModel):
     title: str
     tree_json: dict
     wiki_page_count: int
-    generated_at: str
+    generated_at: datetime
 
     model_config = {"from_attributes": True}
 
 
 class GenerateRequest(BaseModel):
-    scope_type: str
+    scope_type: Literal["global", "department", "project"]
     scope_id: Optional[uuid.UUID] = None
 
 
 @router.get("/mindmap", response_model=MindmapResponse)
 async def get_mindmap_endpoint(
-    scope_type: str = "global",
+    scope_type: Literal["global", "department", "project"] = "global",
     scope_id: Optional[uuid.UUID] = None,
     db: AsyncSession = Depends(get_db),
     current_user: Employee = Depends(get_current_user),
