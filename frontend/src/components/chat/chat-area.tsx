@@ -99,7 +99,7 @@ export function ChatArea({
       {/* Citation slide-out panel */}
       <CitationPanel slug={selectedSlug} onClose={() => setSelectedSlug(null)} />
       </div>
-      <MindMapPanel />
+      <MindMapPanel onNodeClick={(name) => setInput(`Explain about "${name}"`)} />
     </div>
   );
 }
