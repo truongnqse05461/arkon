@@ -30,7 +30,7 @@ function renderNode({ nodeDatum, toggleNode }: CustomNodeElementProps) {
   return (
     <foreignObject x={0} y={-14} width={nodeWidth} height={30}>
       <div
-        // @ts-ignore xmlns needed for SVG foreignObject
+        // @ts-expect-error xmlns needed for SVG foreignObject
         xmlns="http://www.w3.org/1999/xhtml"
         style={{
           display: "flex",
