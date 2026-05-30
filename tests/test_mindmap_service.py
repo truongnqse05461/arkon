@@ -92,3 +92,53 @@ async def test_generate_mindmap_strips_markdown_fences():
         with patch("app.services.mindmap_service.get_mindmap", return_value=None):
             result = await generate_mindmap(db, "global", None)
             assert result is not None
+
+
+@pytest.mark.asyncio
+async def test_generate_mindmap_updates_existing():
+    from app.services.mindmap_service import generate_mindmap
+    db = AsyncMock()
+    pages = [make_page("Architecture")]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = pages
+    db.execute = AsyncMock(return_value=mock_result)
+
+    tree = {"name": "KB", "children": []}
+    mock_llm = AsyncMock()
+    mock_llm.generate = AsyncMock(return_value=json.dumps(tree))
+    mock_registry = AsyncMock()
+    mock_registry.get_llm = AsyncMock(return_value=mock_llm)
+
+    existing = MagicMock()
+    existing.title = "Old Title"
+    existing.tree_json = {}
+    existing.wiki_page_count = 0
+
+    with patch("app.services.mindmap_service.ProviderRegistry", return_value=mock_registry):
+        with patch("app.services.mindmap_service.get_mindmap", return_value=existing):
+            result = await generate_mindmap(db, "global", None)
+            assert result is existing
+            assert existing.title == "KB"
+            assert existing.wiki_page_count == 1
+            db.flush.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_generate_mindmap_raises_on_non_dict_json():
+    from app.services.mindmap_service import generate_mindmap
+    db = AsyncMock()
+    pages = [make_page("Arch")]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = pages
+    db.execute = AsyncMock(return_value=mock_result)
+
+    # LLM returns a JSON array instead of an object
+    mock_llm = AsyncMock()
+    mock_llm.generate = AsyncMock(return_value='[{"name": "KB"}]')
+    mock_registry = AsyncMock()
+    mock_registry.get_llm = AsyncMock(return_value=mock_llm)
+
+    with patch("app.services.mindmap_service.ProviderRegistry", return_value=mock_registry):
+        with patch("app.services.mindmap_service.get_mindmap", return_value=None):
+            with pytest.raises(ValueError, match="unexpected JSON shape"):
+                await generate_mindmap(db, "global", None)
