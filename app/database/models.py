@@ -1355,3 +1355,43 @@ class ChatMessage(Base):
         Index("ix_chat_messages_session_id", "session_id"),
     )
 
+
+# ---------------------------------------------------------------------------
+# Wiki MindMap — cached AI-generated mind map tree per scope
+# ---------------------------------------------------------------------------
+
+class WikiMindmap(Base):
+    """Cached AI-generated MindMap tree for a wiki scope. One row per (scope_type, scope_id)."""
+    __tablename__ = "wiki_mindmaps"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    scope_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    scope_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True,
+    )
+    title: Mapped[str] = mapped_column(String(500), nullable=False, default="Knowledge Base")
+    tree_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    wiki_page_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_wiki_mindmaps_global", "scope_type", unique=True,
+            postgresql_where=text("scope_id IS NULL"),
+        ),
+        Index(
+            "uq_wiki_mindmaps_scoped", "scope_type", "scope_id", unique=True,
+            postgresql_where=text("scope_id IS NOT NULL"),
+        ),
+    )
+
