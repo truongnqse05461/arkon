@@ -1336,6 +1336,104 @@ async def backfill_translate_pages_task(
     return {"translated": translated, "skipped": skipped, "failed": failed}
 
 
+async def retranslate_source_task(
+    ctx: dict,
+    source_id: str,
+    target_language: Optional[str] = None,
+    source_language: Optional[str] = None,
+) -> dict:
+    """Re-run translation for one source's wiki pages.
+
+    Applies add / change / remove per page via the shared `retranslate_page`
+    helper, reports progress through ProgressTracker, and restores the source to
+    `ready` when done. Per-page failures are non-blocking.
+    """
+    from app.ai.embedding_catalog import get_spec
+    from app.ai.registry import ProviderRegistry
+    from app.database import async_session_factory
+    from app.database.models import Source, WikiPage
+    from app.services.retranslation import retranslate_page
+
+    _ = ctx
+    sid = uuid.UUID(source_id)
+    tracker = ProgressTracker(sid)
+    counts = {"done": 0, "skipped": 0, "removed": 0, "failed": 0}
+
+    async with async_session_factory() as session:
+        source = await session.get(Source, sid)
+        if not source:
+            logger.warning(f"retranslate: source {source_id} not found")
+            return {"status": "error", "message": "source not found"}
+
+        try:
+            registry = ProviderRegistry(session)
+            llm = await registry.get_llm()
+            embedder = None
+            active_spec = None
+            try:
+                spec_id = await registry.get_active_embedding_spec_id()
+                if spec_id:
+                    active_spec = get_spec(spec_id)
+                    embedder = await registry.get_embedding(task="document", spec_id=spec_id)
+            except Exception as exc:
+                logger.warning(f"retranslate: no embedding provider: {exc}")
+
+            pages = (
+                await session.execute(
+                    select(WikiPage).where(WikiPage.source_ids.any(sid))
+                )
+            ).scalars().all()
+            total = len(pages)
+
+            for i, page in enumerate(pages):
+                outcome = await retranslate_page(
+                    session, page, target_language, source_language, llm, embedder, active_spec
+                )
+                counts[outcome] = counts.get(outcome, 0) + 1
+                await session.commit()
+                await tracker.update(
+                    int((i + 1) / max(total, 1) * 100),
+                    f"Re-translating… {i + 1}/{total}",
+                )
+
+            source = await session.get(Source, sid)
+            if source:
+                source.target_language = target_language
+                if source_language:
+                    source.source_language = source_language
+                source.status = "ready"
+                source.progress = 100
+                source.progress_message = (
+                    f"Re-translation complete: {counts['done']} done, "
+                    f"{counts['skipped']} skipped, {counts['removed']} removed, "
+                    f"{counts['failed']} failed"
+                )
+                await session.commit()
+
+            logger.success(f"Re-translation complete for {source_id}: {counts}")
+            return {"status": "ok", **counts}
+
+        except BaseException as e:
+            logger.error(f"Re-translation failed for {source_id}: {e}")
+            msg = f"Re-translation error: {str(e)[:200]}"
+
+            async def _restore() -> None:
+                from app.database import async_session_factory as _sf
+                from app.database.models import Source as _Source
+                async with _sf() as s2:
+                    src = await s2.get(_Source, sid)
+                    if src:
+                        src.status = "ready"
+                        src.progress_message = msg
+                        await s2.commit()
+
+            try:
+                await asyncio.shield(_restore())
+            except Exception:
+                pass
+            raise
+
+
 class WorkerSettings:
     """arq worker configuration."""
 
@@ -1349,6 +1447,7 @@ class WorkerSettings:
         reembed_all_pages_task,
         ai_pre_review_draft_task,
         backfill_translate_pages_task,
+        retranslate_source_task,
     ]
     redis_settings = _get_redis_settings()
     max_jobs = settings.worker_max_jobs

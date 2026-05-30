@@ -5,6 +5,7 @@ We patch the translator + embedding helpers so these stay pure unit tests
 (no LLM, no DB).
 """
 
+import inspect
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -135,3 +136,15 @@ async def test_source_override_propagates_to_page():
 
     assert outcome == "done"
     assert page.source_language == "zh"
+
+
+def test_retranslate_source_task_registered():
+    from app.worker import WorkerSettings, retranslate_source_task
+    assert retranslate_source_task in WorkerSettings.functions
+
+
+def test_retranslate_source_task_signature():
+    from app.worker import retranslate_source_task
+    assert inspect.iscoroutinefunction(retranslate_source_task)
+    params = list(inspect.signature(retranslate_source_task).parameters)
+    assert params[:2] == ["ctx", "source_id"]
