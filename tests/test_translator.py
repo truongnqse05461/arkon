@@ -32,7 +32,7 @@ def test_validate_translation_rejects_truncation():
 
 def test_validate_translation_rejects_runaway_expansion():
     src = "x" * 100
-    tgt = "y" * 250  # 250% — over 200% bound
+    tgt = "y" * 500  # 500% of source — over the 4.0x cap (see _LENGTH_MAX_RATIO)
     out = TranslationOutput(title="A", summary="B", content_md=tgt)
     with pytest.raises(InvalidTranslationError, match="length"):
         validate_translation(src_content=src, output=out)
