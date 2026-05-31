@@ -1,7 +1,7 @@
 """Add wiki_mindmaps table
 
-Revision ID: 029
-Revises: 028
+Revision ID: 030
+Revises: 029
 Create Date: 2026-05-31
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-revision: str = "029"
-down_revision: Union[str, None] = "028"
+revision: str = "030"
+down_revision: Union[str, None] = "029"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

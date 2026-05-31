@@ -1,7 +1,7 @@
 """Employees can belong to multiple departments
 
-Revision ID: 028
-Revises: 027
+Revision ID: 029
+Revises: 028
 Create Date: 2026-05-22 00:00:00.000000
 
 Replaces the single `employees.department_id` FK with a many-to-many
@@ -19,8 +19,8 @@ from sqlalchemy.dialects.postgresql import UUID
 
 from alembic import op
 
-revision: str = "028"
-down_revision: Union[str, None] = "027"
+revision: str = "029"
+down_revision: Union[str, None] = "028"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

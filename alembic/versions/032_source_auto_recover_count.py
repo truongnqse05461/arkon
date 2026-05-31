@@ -1,7 +1,7 @@
 """Add Source.auto_recover_count for stuck-processing sweep
 
-Revision ID: 030
-Revises: 029
+Revision ID: 032
+Revises: 031
 Create Date: 2026-05-25 12:00:00.000000
 
 Counts how many times a source has been auto-flipped from 'processing' back to
@@ -16,8 +16,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "030"
-down_revision: Union[str, None] = "029"
+revision: str = "032"
+down_revision: Union[str, None] = "031"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

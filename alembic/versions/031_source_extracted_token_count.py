@@ -1,7 +1,7 @@
 """Add Source.extracted_token_count for upload gate
 
-Revision ID: 029
-Revises: 028
+Revision ID: 031
+Revises: 030
 Create Date: 2026-05-22 14:00:00.000000
 
 Tracks the tokenized length of the extracted document text. Used by the
@@ -15,8 +15,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "029"
-down_revision: Union[str, None] = "028"
+revision: str = "031"
+down_revision: Union[str, None] = "030"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
