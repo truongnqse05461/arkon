@@ -206,7 +206,7 @@ async def stream_chat(
             from sqlalchemy.orm import selectinload
             emp = (await stream_db.execute(
                 select(Employee).where(Employee.id == user.id)
-                .options(selectinload(Employee.custom_role), selectinload(Employee.department))
+                .options(selectinload(Employee.custom_role), selectinload(Employee.employee_departments))
             )).scalar_one_or_none()
 
             if emp is None:
