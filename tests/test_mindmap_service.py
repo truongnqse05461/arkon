@@ -4,24 +4,101 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
-def make_page(title: str, content: str = "content", scope_type: str = "global", scope_id=None):
+def make_page(
+    title: str,
+    content: str = "content " * 10,
+    scope_type: str = "global",
+    scope_id=None,
+    slug: str = "page",
+    summary: str = "",
+    title_translated=None,
+    summary_translated=None,
+    content_md_translated=None,
+    source_ids=None,
+):
     p = MagicMock()
+    p.slug = slug
     p.title = title
+    p.summary = summary
     p.content_md = content
+    p.title_translated = title_translated
+    p.summary_translated = summary_translated
+    p.content_md_translated = content_md_translated
+    p.source_ids = source_ids or []
     p.scope_type = scope_type
     p.scope_id = scope_id
     p.orphaned = False
     return p
 
 
+def make_db():
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.flush = AsyncMock()
+    db.refresh = AsyncMock()
+    return db
+
+
 @pytest.mark.asyncio
 async def test_build_payload_uses_excerpts_for_small_wiki():
     from app.services.mindmap_service import _build_payload
-    pages = [make_page(f"Page {i}", "x" * 400) for i in range(10)]
+    pages = [make_page(f"Page {i}", "x" * 700) for i in range(10)]
     result = _build_payload(pages)
     assert "Page 0" in result
-    # With excerpts: each line has content (the "x" * 300 excerpt)
+    # With excerpts: each line has content (the "x" * 600 excerpt)
     assert "x" in result
+
+
+@pytest.mark.asyncio
+async def test_build_payload_prefers_translated_title_and_summary():
+    from app.services.mindmap_service import _build_payload
+
+    pages = [
+        make_page(
+            "Original Title",
+            content="Original content " * 20,
+            title_translated="Tieu de dich",
+            summary_translated="Tom tat da dich " * 10,
+        )
+    ]
+
+    result = _build_payload(pages)
+
+    assert "Tieu de dich" in result
+    assert "Tom tat da dich" in result
+    assert "Original Title" not in result
+
+
+@pytest.mark.asyncio
+async def test_build_payload_falls_back_to_original_content():
+    from app.services.mindmap_service import _build_payload
+
+    pages = [make_page("Architecture", content="Original architecture content " * 20)]
+
+    result = _build_payload(pages)
+
+    assert "Architecture" in result
+    assert "Original architecture content" in result
+
+
+@pytest.mark.asyncio
+async def test_build_payload_uses_translated_content_when_summary_missing():
+    from app.services.mindmap_service import _build_payload
+
+    pages = [
+        make_page(
+            "Original Title",
+            content="Original content " * 20,
+            title_translated="Tieu de dich",
+            content_md_translated="Noi dung da dich " * 20,
+        )
+    ]
+
+    result = _build_payload(pages)
+
+    assert "Tieu de dich" in result
+    assert "Noi dung da dich" in result
+    assert "Original content" not in result
 
 
 @pytest.mark.asyncio
@@ -36,10 +113,55 @@ async def test_build_payload_titles_only_for_large_wiki():
         assert len(line) < 20
 
 
+def test_filter_pages_excludes_wiki_index_and_log():
+    from app.services.mindmap_service import _filter_pages_for_mindmap
+
+    pages = [
+        make_page("Wiki Index", content="Index content " * 20, slug="_index"),
+        make_page("Wiki Log", content="Log content " * 20, slug="_log"),
+        make_page("Policy", content="Policy learning content " * 20, slug="policy"),
+    ]
+
+    result = _filter_pages_for_mindmap(pages)
+
+    assert [p.title for p in result] == ["Policy"]
+
+
+def test_filter_pages_excludes_empty_or_short_content():
+    from app.services.mindmap_service import _filter_pages_for_mindmap
+
+    pages = [
+        make_page("Stub", content="short", slug="stub"),
+        make_page("Useful", content="Useful process content " * 20, slug="useful"),
+    ]
+
+    result = _filter_pages_for_mindmap(pages)
+
+    assert [p.title for p in result] == ["Useful"]
+
+
+def test_filter_pages_keeps_short_summary_with_meaningful_content():
+    from app.services.mindmap_service import _filter_pages_for_mindmap
+
+    pages = [
+        make_page(
+            "Useful",
+            content="",
+            slug="useful",
+            summary_translated="OK",
+            content_md_translated="Meaningful translated process content " * 20,
+        )
+    ]
+
+    result = _filter_pages_for_mindmap(pages)
+
+    assert [p.title for p in result] == ["Useful"]
+
+
 @pytest.mark.asyncio
 async def test_generate_mindmap_calls_llm_and_upserts():
     from app.services.mindmap_service import generate_mindmap
-    db = AsyncMock()
+    db = make_db()
     pages = [make_page("Architecture"), make_page("Deployment")]
 
     mock_result = MagicMock()
@@ -58,12 +180,15 @@ async def test_generate_mindmap_calls_llm_and_upserts():
             result = await generate_mindmap(db, "global", None)
             db.add.assert_called_once()
             db.flush.assert_called()
+            prompt = mock_llm.generate.call_args.args[0]
+            assert "learner-facing concept map" in prompt
+            assert "Wiki knowledge pages" in prompt
 
 
 @pytest.mark.asyncio
 async def test_generate_mindmap_raises_when_no_pages():
     from app.services.mindmap_service import generate_mindmap
-    db = AsyncMock()
+    db = make_db()
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = []
     db.execute = AsyncMock(return_value=mock_result)
@@ -75,7 +200,7 @@ async def test_generate_mindmap_raises_when_no_pages():
 @pytest.mark.asyncio
 async def test_generate_mindmap_strips_markdown_fences():
     from app.services.mindmap_service import generate_mindmap
-    db = AsyncMock()
+    db = make_db()
     pages = [make_page("Arch")]
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = pages
@@ -95,9 +220,53 @@ async def test_generate_mindmap_strips_markdown_fences():
 
 
 @pytest.mark.asyncio
+async def test_generate_mindmap_uses_only_filtered_pages_and_count():
+    from app.services.mindmap_service import generate_mindmap
+    db = make_db()
+    pages = [
+        make_page("Wiki Index", content="Index content " * 20, slug="_index"),
+        make_page("Architecture", content="Architecture content " * 20, slug="architecture"),
+    ]
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = pages
+    db.execute = AsyncMock(return_value=mock_result)
+
+    tree = {"name": "KB", "children": []}
+    mock_llm = AsyncMock()
+    mock_llm.generate = AsyncMock(return_value=json.dumps(tree))
+    mock_registry = AsyncMock()
+    mock_registry.get_llm = AsyncMock(return_value=mock_llm)
+
+    with patch("app.services.mindmap_service.ProviderRegistry", return_value=mock_registry):
+        with patch("app.services.mindmap_service.get_mindmap", return_value=None):
+            result = await generate_mindmap(db, "global", None)
+
+    assert result.wiki_page_count == 1
+    prompt = mock_llm.generate.call_args.args[0]
+    assert "Architecture" in prompt
+    payload = prompt.split("Wiki knowledge pages:", 1)[1]
+    assert "Wiki Index" not in payload
+
+
+@pytest.mark.asyncio
+async def test_generate_mindmap_raises_when_only_internal_pages():
+    from app.services.mindmap_service import generate_mindmap
+    db = make_db()
+    pages = [make_page("Wiki Log", content="Log content " * 20, slug="_log")]
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = pages
+    db.execute = AsyncMock(return_value=mock_result)
+
+    with pytest.raises(ValueError, match="No wiki pages"):
+        await generate_mindmap(db, "global", None)
+
+
+@pytest.mark.asyncio
 async def test_generate_mindmap_updates_existing():
     from app.services.mindmap_service import generate_mindmap
-    db = AsyncMock()
+    db = make_db()
     pages = [make_page("Architecture")]
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = pages
@@ -126,7 +295,7 @@ async def test_generate_mindmap_updates_existing():
 @pytest.mark.asyncio
 async def test_generate_mindmap_raises_on_non_dict_json():
     from app.services.mindmap_service import generate_mindmap
-    db = AsyncMock()
+    db = make_db()
     pages = [make_page("Arch")]
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = pages
