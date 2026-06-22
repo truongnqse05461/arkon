@@ -46,10 +46,10 @@ class Settings(BaseSettings):
     # --- MinIO ---
     minio_endpoint: str = Field(default="localhost:9000")
     minio_public_endpoint: str = Field(
-        default="",
+        default="localhost:9002",
         description="Public-facing MinIO address used in presigned URLs (browser-accessible). "
-                    "Defaults to minio_endpoint if not set. "
-                    "In Docker: set to 'localhost:9000' so presigned URLs work from the browser.",
+                    "Defaults to host-mapped port 9002 (docker-compose maps 9002:9000). "
+                    "If set to empty string, falls back to minio_endpoint.",
     )
     minio_access_key: str = Field(default="minioadmin")
     minio_secret_key: str = Field(default="minioadmin123")
@@ -72,6 +72,45 @@ class Settings(BaseSettings):
     mrp_auto_approve_plan: bool = Field(
         default=False,
         description="If True, compilation plans are auto-approved without human review",
+    )
+    mrp_multipass_writer_enabled: bool = Field(
+        default=True,
+        description="If True, REFINE uses multi-pass writer when source > budget; if False, falls back to single-pass with tiered selection",
+    )
+    auto_approve_extraction_threshold_tokens: int = Field(
+        default=200_000,
+        description="Doc <= this many tokens after extraction auto-proceeds. Larger docs pause at status='awaiting_approval' for human review.",
+    )
+    extraction_approval_ttl_hours: int = Field(
+        default=24,
+        description="Orphan sources stuck in 'awaiting_approval' longer than this are auto-deleted by cleanup cron.",
+    )
+    max_auto_recover_attempts: int = Field(
+        default=3,
+        description="Max times a source may be auto-flipped from stuck 'processing' back to 'error' before the retry API refuses further attempts. Prevents token-burning loops when the failure is deterministic (bad provider key, malformed file).",
+    )
+
+    # --- Translation Pipeline ---
+    translation_enabled: bool = Field(
+        default=True,
+        description="Enable optional TRANSLATE phase in the MRP pipeline",
+    )
+    translation_length_ratio_check_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enforce the translated content_md length ratio bounds in validate_translation. "
+            "Disable to accept translations that are much shorter or longer than the source "
+            "(e.g. when an LLM legitimately compresses verbose source text). Wikilink and "
+            "citation count checks remain active either way."
+        ),
+    )
+    translation_model_spec_id: str | None = Field(
+        default=None,
+        description="LLM spec_id for translation calls; null = use the writer LLM",
+    )
+    language_detection_min_confidence: float = Field(
+        default=0.6,
+        description="Minimum confidence for source_language auto-detection",
     )
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}

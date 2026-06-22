@@ -149,6 +149,7 @@ export function WikiPageTree({
     return pages.filter(
       (p) =>
         p.title.toLowerCase().includes(q) ||
+        (p.title_translated?.toLowerCase().includes(q) ?? false) ||
         p.slug.toLowerCase().includes(q) ||
         p.summary.toLowerCase().includes(q)
     );
@@ -297,23 +298,33 @@ export function WikiPageTree({
           <button
             onClick={() => onPageSelect(page.slug)}
             className={cn(
-              "flex-1 flex items-center gap-2 px-2 py-1.5 text-xs min-w-0 transition-all text-left",
+              "flex-1 flex flex-col gap-0 px-2 py-1.5 text-xs min-w-0 transition-all text-left",
               isActive ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground",
             )}
-            title={page.summary || page.title}
+            title={page.summary || page.title_translated || page.title}
           >
             <span className="truncate">{page.title}</span>
+            {page.title_translated && page.title_translated !== page.title && (
+              <span className="truncate text-[10px] text-muted-foreground/70 font-normal">
+                {page.title_translated}
+              </span>
+            )}
           </button>
         ) : (
           <Link
             href={`/wiki/${page.slug}${linkSuffix}`}
             className={cn(
-              "flex-1 flex items-center gap-2 px-2 py-1.5 text-xs min-w-0 transition-all",
+              "flex-1 flex flex-col gap-0 px-2 py-1.5 text-xs min-w-0 transition-all",
               isActive ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground",
             )}
-            title={page.summary || page.title}
+            title={page.summary || page.title_translated || page.title}
           >
             <span className="truncate">{page.title}</span>
+            {page.title_translated && page.title_translated !== page.title && (
+              <span className="truncate text-[10px] text-muted-foreground/70 font-normal">
+                {page.title_translated}
+              </span>
+            )}
           </Link>
         )}
 

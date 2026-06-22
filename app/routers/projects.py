@@ -27,6 +27,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.database.models import (
     Employee,
+    EmployeeDepartment,
     Project,
     ProjectMember,
     ProjectSource,
@@ -347,7 +348,7 @@ class CandidateEmployeeOut(BaseModel):
     id: str
     name: str
     email: str
-    department_name: str = ""
+    department_names: list[str] = []
 
 
 @router.get(
@@ -378,7 +379,11 @@ async def list_member_candidates(
 
     stmt = (
         select(Employee)
-        .options(selectinload(Employee.department))
+        .options(
+            selectinload(Employee.employee_departments).selectinload(
+                EmployeeDepartment.department
+            )
+        )
         .where(
             Employee.is_active.is_(True),
             Employee.id.notin_(member_ids_stmt),
@@ -396,7 +401,9 @@ async def list_member_candidates(
             id=str(e.id),
             name=e.name,
             email=e.email,
-            department_name=e.department.name if e.department else "",
+            department_names=[
+                ed.department.name for ed in e.employee_departments if ed.department
+            ],
         )
         for e in rows
     ]
@@ -972,7 +979,14 @@ async def get_workspace_wiki_graph(
     from app.services import wiki_service
 
     pages = (await db.execute(
-        select(WikiPage.slug, WikiPage.title, WikiPage.page_type)
+        select(
+            WikiPage.slug,
+            WikiPage.title,
+            WikiPage.page_type,
+            WikiPage.title_translated,
+            WikiPage.source_language,
+            WikiPage.target_language,
+        )
         .where(
             WikiPage.scope_type == "project",
             WikiPage.scope_id == pid,
@@ -992,7 +1006,17 @@ async def get_workspace_wiki_graph(
     )).all()
 
     return {
-        "nodes": [{"slug": r.slug, "title": r.title, "page_type": r.page_type} for r in pages],
+        "nodes": [
+            {
+                "slug": r.slug,
+                "title": r.title,
+                "page_type": r.page_type,
+                "title_translated": r.title_translated,
+                "source_language": r.source_language,
+                "target_language": r.target_language,
+            }
+            for r in pages
+        ],
         "edges": [
             {"from": r.from_slug, "to": r.to_slug}
             for r in edges

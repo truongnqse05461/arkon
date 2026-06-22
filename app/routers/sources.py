@@ -18,6 +18,7 @@ from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.database import get_db
 from app.database.models import Employee, ScopeType, Source, SourceDepartment, WikiPage
 from app.database.repository import Repository
@@ -58,6 +59,9 @@ class SourceResponse(BaseModel):
     job_id: Optional[str] = None
     page_count: int = 0
     wiki_page_count: int = 0
+    extracted_token_count: Optional[int] = None
+    image_count: int = 0
+    auto_recover_count: int = 0
     knowledge_type_id: Optional[uuid.UUID] = None
     knowledge_type_name: Optional[str] = None
     knowledge_type_color: Optional[str] = None
@@ -68,6 +72,8 @@ class SourceResponse(BaseModel):
     contributed_by_name: Optional[str] = None
     scope_type: str = "global"
     scope_id: Optional[uuid.UUID] = None
+    source_language: Optional[str] = None
+    target_language: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -85,6 +91,7 @@ class SourceCreateURL(BaseModel):
     title: Optional[str] = None
     knowledge_type_id: Optional[uuid.UUID] = None
     department_ids: list[uuid.UUID] = []
+    target_language: Optional[str] = None  # ISO 639-1; null = no translation
 
 
 class SourceUpdate(BaseModel):
@@ -95,13 +102,29 @@ class SourceUpdate(BaseModel):
     scope_id: Optional[uuid.UUID] = None
 
 
+class RetranslateRequest(BaseModel):
+    target_language: Optional[str] = None   # ISO 639-1; null = remove translation
+    source_language: Optional[str] = None   # null = keep stored/auto-detected
+
+
+# Curated set the UI offers; keeps junk codes out of the translator.
+_RETRANSLATE_LANGS = {"vi", "en", "zh", "ja"}
+
+
 async def _wiki_page_count(session: AsyncSession, source_id: uuid.UUID) -> int:
     """How many wiki pages reference this source in their source_ids array."""
     stmt = select(func.count()).select_from(WikiPage).where(WikiPage.source_ids.any(source_id))  # type: ignore[arg-type]
     return (await session.execute(stmt)).scalar_one()
 
 
-def _to_response(source: Source, wiki_page_count: int = 0) -> SourceResponse:
+async def _image_count(session: AsyncSession, source_id: uuid.UUID) -> int:
+    """How many SourceImage rows exist for this source."""
+    from app.database.models import SourceImage
+    stmt = select(func.count()).select_from(SourceImage).where(SourceImage.source_id == source_id)
+    return (await session.execute(stmt)).scalar_one()
+
+
+def _to_response(source: Source, wiki_page_count: int = 0, image_count: int = 0) -> SourceResponse:
     # Extract departments from M2M relationship
     dept_ids = []
     dept_names = []
@@ -124,6 +147,9 @@ def _to_response(source: Source, wiki_page_count: int = 0) -> SourceResponse:
         job_id=source.job_id,
         page_count=len(source.page_offsets or []),
         wiki_page_count=wiki_page_count,
+        extracted_token_count=source.extracted_token_count,
+        image_count=image_count,
+        auto_recover_count=source.auto_recover_count or 0,
         knowledge_type_id=source.knowledge_type_id,
         knowledge_type_name=source.knowledge_type.name if source.knowledge_type else None,
         knowledge_type_color=source.knowledge_type.color if source.knowledge_type else None,
@@ -133,6 +159,8 @@ def _to_response(source: Source, wiki_page_count: int = 0) -> SourceResponse:
         contributed_by_name=source.contributor.name if source.contributor else None,
         scope_type=source.scope_type or "global",
         scope_id=source.scope_id,
+        source_language=getattr(source, "source_language", None),
+        target_language=getattr(source, "target_language", None),
         created_at=source.created_at.isoformat(),
         updated_at=source.updated_at.isoformat(),
     )
@@ -171,22 +199,26 @@ async def list_sources(
     scope_level = "all" if user.role == "admin" else get_scope_level(list(perms), "doc", "read")
 
     if scope_level == "own_dept":
-        # Only show: global docs (no departments) OR docs in user's department
-        dept_filter = or_(
-            # Source has no departments → global
-            ~exists(
-                select(SourceDepartment.source_id)
-                .where(SourceDepartment.source_id == Source.id)
-            ),
-            # Source has user's department
-            exists(
-                select(SourceDepartment.source_id)
-                .where(
-                    SourceDepartment.source_id == Source.id,
-                    SourceDepartment.department_id == user.department_id,
-                )
-            ),
+        # Only show: global docs (no departments) OR docs overlapping the
+        # user's department set. Empty set → only global docs.
+        user_dept_ids = list(user.department_ids)
+        global_clause = ~exists(
+            select(SourceDepartment.source_id)
+            .where(SourceDepartment.source_id == Source.id)
         )
+        if user_dept_ids:
+            dept_filter = or_(
+                global_clause,
+                exists(
+                    select(SourceDepartment.source_id)
+                    .where(
+                        SourceDepartment.source_id == Source.id,
+                        SourceDepartment.department_id.in_(user_dept_ids),
+                    )
+                ),
+            )
+        else:
+            dept_filter = global_clause
         base = base.where(dept_filter)
         count_base = count_base.where(dept_filter)
     elif scope_level is None:
@@ -254,6 +286,7 @@ async def get_source(
         raise HTTPException(403, "Access denied")
 
     wiki_count = await _wiki_page_count(db, source_id)
+    img_count = await _image_count(db, source_id)
     download_url = None
     if source.minio_key:
         try:
@@ -262,7 +295,7 @@ async def get_source(
         except Exception:
             pass
 
-    base = _to_response(source, wiki_count)
+    base = _to_response(source, wiki_count, img_count)
     return SourceDetail(
         **base.model_dump(),
         full_text=source.full_text,
@@ -299,6 +332,7 @@ async def upload_source(
     department_ids: Optional[str] = Form(None),  # comma-separated UUIDs
     scope_type: Optional[str] = Form(None),
     scope_id: Optional[str] = Form(None),
+    target_language: Optional[str] = Form(None),  # ISO 639-1; null = no translation
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("doc:create"),
 ):
@@ -319,10 +353,11 @@ async def upload_source(
     # Scope validation: own_dept users can only assign their own department
     perms = _get_user_permissions(user)
     if user.role != "admin" and "doc:create:all" not in perms:
-        # User only has doc:create:own_dept
+        # User only has doc:create:own_dept — every assigned dept must overlap.
+        user_depts = set(user.department_ids)
         for did in dept_uuids:
-            if did != user.department_id:
-                raise HTTPException(403, "You can only assign documents to your own department")
+            if did not in user_depts:
+                raise HTTPException(403, "You can only assign documents to your own departments")
 
     repo = Repository(db)
     source = Source(
@@ -337,6 +372,7 @@ async def upload_source(
         contributed_by_employee_id=user.id,
         scope_type=scope_type or ScopeType.GLOBAL.value,
         scope_id=uuid.UUID(scope_id) if scope_id else None,
+        target_language=target_language,
     )
     source = await repo.create(source)
     await db.flush()
@@ -398,6 +434,7 @@ async def add_url_source(
         knowledge_type_id=req.knowledge_type_id,
         contributed_by_employee_id=user.id,
         scope_type=ScopeType.GLOBAL.value,
+        target_language=req.target_language,
     )
     source = await repo.create(source)
     await db.flush()
@@ -439,6 +476,25 @@ async def update_source(
     source = await db.get(Source, source_id)
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
+
+    # Scope and department assignments drive where wiki pages get committed.
+    # The ingestion worker reads them from DB at commit time, so an edit while
+    # the pipeline is mid-flight can cause pages to land in the wrong scope
+    # (visibility leak). Block those fields for any in-flight status; title
+    # and knowledge_type are cosmetic for the pipeline and remain editable.
+    in_flight_statuses = ("pending", "processing", "awaiting_approval", "plan_ready")
+    if source.status in in_flight_statuses:
+        changing_scope = body.scope_type is not None or body.scope_id is not None
+        changing_dept = body.department_ids is not None
+        if changing_scope or changing_dept:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Cannot change visibility or departments while the document "
+                    "is being processed. Wait until it finishes (or fails) and try again."
+                ),
+            )
+
     if body.title is not None:
         source.title = body.title
     if body.knowledge_type_id is not None:
@@ -453,9 +509,10 @@ async def update_source(
         # Permission check: own_dept users may only assign their own department
         perms = _get_user_permissions(_user)
         if _user.role != "admin" and "doc:edit:all" not in perms:
+            user_depts = set(_user.department_ids)
             for did in body.department_ids:
-                if did != _user.department_id:
-                    raise HTTPException(403, "You can only assign documents to your own department")
+                if did not in user_depts:
+                    raise HTTPException(403, "You can only assign documents to your own departments")
 
         old_dept_rows = (await db.execute(
             select(SourceDepartment.department_id).where(SourceDepartment.source_id == source_id)
@@ -534,6 +591,19 @@ async def retry_source(
             status_code=400,
             detail=f"Retry is only allowed for sources in {allowed_statuses} status",
         )
+    # Block runaway loops: if the sweep cron has flipped this source back to
+    # 'error' too many times in a row, the failure is almost certainly
+    # deterministic (bad provider key, malformed file). Force human review.
+    cap = settings.max_auto_recover_attempts
+    if (source.auto_recover_count or 0) >= cap and _user.role != "admin":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This source has failed {source.auto_recover_count} consecutive "
+                f"auto-recoveries (cap={cap}). Check LLM provider config and the "
+                f"source file, then ask an admin to reset and retry."
+            ),
+        )
     if source.source_type == "url" and not source.url:
         raise HTTPException(status_code=400, detail="Source has no URL to retry")
     if source.source_type == "file" and not source.minio_key:
@@ -568,6 +638,70 @@ async def retry_source(
     )).scalar_one()
     logger.info(f"Queued retry job {job.job_id if job else 'N/A'} for source {source_id}")
     return _to_response(source)
+
+
+@router.post("/sources/{source_id}/retranslate", response_model=SourceResponse)
+async def retranslate_source(
+    source_id: uuid.UUID,
+    body: RetranslateRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("doc:edit"),
+):
+    """Re-run translation for a ready source: add, change, or remove its target
+    language (optionally correcting the detected source language)."""
+    if not settings.translation_enabled:
+        raise HTTPException(status_code=400, detail="Translation is disabled")
+
+    source = (await db.execute(
+        select(Source)
+        .options(*_source_load_options())
+        .where(Source.id == source_id)
+    )).scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    if source.status != "ready":
+        raise HTTPException(
+            status_code=400,
+            detail="Re-translation is only allowed for sources in 'ready' status",
+        )
+    if await _wiki_page_count(db, source_id) == 0:
+        raise HTTPException(status_code=400, detail="Source has no wiki pages to translate")
+
+    target = (body.target_language or "").strip().lower() or None
+    override = (body.source_language or "").strip().lower() or None
+    if target and target not in _RETRANSLATE_LANGS:
+        raise HTTPException(status_code=400, detail=f"Unsupported target_language: {target}")
+    if override and override not in _RETRANSLATE_LANGS:
+        raise HTTPException(status_code=400, detail=f"Unsupported source_language: {override}")
+
+    effective_source = override or source.source_language
+    if target and effective_source and target == effective_source:
+        raise HTTPException(status_code=400, detail="Source and target language must differ.")
+
+    source.target_language = target
+    if override:
+        source.source_language = override
+    source.status = "translating"
+    source.progress = 0
+    source.progress_message = "Re-translating…"
+    source.error_message = None
+    await db.flush()
+
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job(
+        "retranslate_source_task", str(source_id), target, override
+    )
+    if job:
+        source.job_id = job.job_id
+    await db.commit()
+
+    source = (await db.execute(
+        select(Source)
+        .options(*_source_load_options())
+        .where(Source.id == source_id)
+    )).scalar_one()
+    logger.info(f"Queued retranslate job {job.job_id if job else 'N/A'} for source {source_id}")
+    return _to_response(source, await _wiki_page_count(db, source_id))
 
 
 # ---------------------------------------------------------------------------
@@ -615,6 +749,52 @@ async def get_compilation_plan(
         "created_at": plan.created_at.isoformat(),
         "reviewed_at": plan.reviewed_at.isoformat() if plan.reviewed_at else None,
         "review_note": plan.review_note,
+    }
+
+
+@router.post("/sources/{source_id}/approve-extraction")
+async def approve_extraction(
+    source_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("doc:edit"),
+):
+    """Resume the pipeline for a source paused at status='awaiting_approval'.
+
+    Triggered after a human reviews the extracted token count + image count and
+    decides to spend AI tokens on it. Enqueues caption_images_task (if images
+    exist) or ingest_map_reduce_task directly.
+    """
+    from app.worker import enqueue_post_extraction_pipeline
+
+    source = await db.get(Source, source_id)
+    if not source:
+        raise HTTPException(404, "Source not found")
+    if source.status != "awaiting_approval":
+        raise HTTPException(
+            400,
+            f"Source is not awaiting approval (status={source.status})",
+        )
+
+    has_images = (await _image_count(db, source_id)) > 0
+    job_id = await enqueue_post_extraction_pipeline(str(source_id), has_images=has_images)
+
+    source.status = "processing"
+    source.progress = 56
+    source.progress_message = (
+        "Captioning images before extraction..." if has_images
+        else "Extraction queued..."
+    )
+    if job_id:
+        source.job_id = job_id
+
+    await log_audit(db, user, "approve", "source_extraction", str(source.id))
+    await db.commit()
+
+    return {
+        "status": "processing",
+        "job_id": job_id,
+        "has_images": has_images,
+        "token_count": source.extracted_token_count,
     }
 
 

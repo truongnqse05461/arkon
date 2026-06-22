@@ -360,6 +360,8 @@ def build_tool_handlers(
                     "slug": p.slug,
                     "page_type": p.page_type,
                     "title": p.title,
+                    "matched_language": getattr(p, "matched_language", None),
+                    "target_language": p.target_language,
                     "similarity": round(sim, 3),
                     "summary": p.summary or "",
                 }

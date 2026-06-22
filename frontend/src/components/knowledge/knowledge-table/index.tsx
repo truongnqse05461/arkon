@@ -26,7 +26,9 @@ import { KnowledgeType, Department, Source } from "./types";
 import { fileIcons, getFileExt } from "./utils";
 import { StatusDot } from "./status-dot";
 import { EditSourceDialog } from "./edit-source-dialog";
+import { RetranslateDialog } from "./retranslate-dialog";
 import { PlanReviewDialog } from "./plan-review-dialog";
+import { ExtractionReviewDialog } from "./extraction-review-dialog";
 
 type Props = {
   sources: Source[];
@@ -57,7 +59,9 @@ export function KnowledgeTable({
 }: Props) {
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [editSource, setEditSource] = React.useState<Source | null>(null);
+  const [retranslateSource, setRetranslateSource] = React.useState<Source | null>(null);
   const [reviewPlanSource, setReviewPlanSource] = React.useState<Source | null>(null);
+  const [reviewExtractionSource, setReviewExtractionSource] = React.useState<Source | null>(null);
   const [retryingIds, setRetryingIds] = React.useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = React.useState(search);
 
@@ -173,6 +177,11 @@ export function KnowledgeTable({
                         {source.file_name && source.file_name !== source.title && (
                           <p className="text-[10px] text-muted-foreground truncate max-w-[280px]">{source.file_name}</p>
                         )}
+                        {source.target_language && (
+                          <Badge variant="outline" className="text-[10px] font-medium h-4 px-1.5 mt-1">
+                            {(source.source_language ?? "??").toUpperCase()} → {source.target_language.toUpperCase()}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </TableCell>
@@ -267,12 +276,28 @@ export function KnowledgeTable({
                           <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>edit</span>
                           Edit
                         </DropdownMenuItem>
+                        {source.status === "ready" && (
+                          <DropdownMenuItem onClick={() => setRetranslateSource(source)}>
+                            <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>
+                              translate
+                            </span>
+                            Re-translate
+                          </DropdownMenuItem>
+                        )}
                         {source.status === "plan_ready" && (
                           <DropdownMenuItem onClick={() => setReviewPlanSource(source)}>
                             <span className="material-symbols-outlined mr-2 text-blue-500" style={{ fontSize: 16 }}>
                               fact_check
                             </span>
                             Review Plan
+                          </DropdownMenuItem>
+                        )}
+                        {source.status === "awaiting_approval" && (
+                          <DropdownMenuItem onClick={() => setReviewExtractionSource(source)}>
+                            <span className="material-symbols-outlined mr-2 text-orange-500" style={{ fontSize: 16 }}>
+                              scale
+                            </span>
+                            Review Size
                           </DropdownMenuItem>
                         )}
                         {source.status === "error" && (
@@ -366,11 +391,27 @@ export function KnowledgeTable({
         />
       )}
 
+      {retranslateSource && (
+        <RetranslateDialog
+          source={retranslateSource}
+          onClose={() => setRetranslateSource(null)}
+          onDone={() => { setRetranslateSource(null); onRefresh(); }}
+        />
+      )}
+
       {reviewPlanSource && (
         <PlanReviewDialog
           source={reviewPlanSource}
           onClose={() => setReviewPlanSource(null)}
           onDone={() => { setReviewPlanSource(null); onRefresh(); }}
+        />
+      )}
+
+      {reviewExtractionSource && (
+        <ExtractionReviewDialog
+          source={reviewExtractionSource}
+          onClose={() => setReviewExtractionSource(null)}
+          onDone={() => { setReviewExtractionSource(null); onRefresh(); }}
         />
       )}
     </div>

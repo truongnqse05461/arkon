@@ -15,11 +15,13 @@ export type Source = {
   title: string;
   file_name?: string;
   source_type?: string;
-  status: "ready" | "processing" | "error" | "pending" | "plan_ready" | string;
+  status: "ready" | "processing" | "error" | "pending" | "plan_ready" | "awaiting_approval" | string;
   progress?: number;
   progress_message?: string;
   page_count?: number;
   wiki_page_count?: number;
+  extracted_token_count?: number;
+  image_count?: number;
   knowledge_type_id?: string;
   knowledge_type_name?: string;
   knowledge_type_color?: string;
@@ -30,6 +32,8 @@ export type Source = {
   scope_id?: string;
   pipeline_strategy?: string;
   pipeline_phase?: string;
+  source_language?: string | null;
+  target_language?: string | null;
   created_at: string;
   updated_at?: string;
 };

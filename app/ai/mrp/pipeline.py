@@ -32,10 +32,24 @@ async def _resolve_wiki_scopes(session: AsyncSession, source) -> list[tuple[str,
 
     Project scope takes priority. If source has department assignments, one scope
     per department. Falls back to global.
+
+    Reads scope_type / scope_id fresh from DB rather than from the in-memory
+    `source` object: PATCH /sources/{id} may have changed scope while the
+    worker held a stale copy (session uses expire_on_commit=False). Mixing
+    in-memory scope with DB-read departments would commit wiki pages to the
+    wrong scope and could leak visibility.
     """
+    from app.database.models import Source as SourceModel
     from app.database.models import SourceDepartment
-    if source.scope_type == "project":
-        return [("project", source.scope_id)]
+
+    row = (await session.execute(
+        select(SourceModel.scope_type, SourceModel.scope_id).where(SourceModel.id == source.id)
+    )).one_or_none()
+    if row is None:
+        return [("global", None)]
+    scope_type, scope_id = row
+    if scope_type == "project":
+        return [("project", scope_id)]
     rows = (await session.execute(
         select(SourceDepartment.department_id).where(SourceDepartment.source_id == source.id)
     )).all()
@@ -105,6 +119,9 @@ async def run_commit_phase(
                 action = pr.action
                 page = None
 
+                src_lang = getattr(source, "source_language", None)
+                src_target = getattr(source, "target_language", None)
+
                 if action == "CREATE":
                     # Check if already created in this scope by a concurrent pipeline
                     existing = await wiki_service.get_page_by_slug(
@@ -124,6 +141,12 @@ async def run_commit_phase(
                             source_ids=[source.id],
                             scope_type=scope_type,
                             scope_id=scope_id,
+                            source_language=src_lang,
+                            target_language=src_target,
+                            title_translated=pr.title_translated,
+                            summary_translated=pr.summary_translated,
+                            content_md_translated=pr.content_md_translated,
+                            translation_status=pr.translation_status,
                         )
                         pages_created += 1
 
@@ -145,6 +168,12 @@ async def run_commit_phase(
                                 pr.slug,
                             )
 
+                    # Page's target_language is immutable — prefer the existing one if set.
+                    existing_target = (
+                        existing_page.target_language if existing_page else None
+                    )
+                    effective_target = existing_target or src_target
+
                     page = await wiki_service.apply_update(
                         session,
                         slug=pr.slug,
@@ -155,6 +184,12 @@ async def run_commit_phase(
                         add_source_id=source.id,
                         scope_type=scope_type,
                         scope_id=scope_id,
+                        source_language=src_lang,
+                        target_language=effective_target,
+                        title_translated=pr.title_translated,
+                        summary_translated=pr.summary_translated,
+                        content_md_translated=pr.content_md_translated,
+                        translation_status=pr.translation_status,
                     )
                     if page is None:
                         page = await wiki_service.apply_create(
@@ -168,6 +203,12 @@ async def run_commit_phase(
                             source_ids=[source.id],
                             scope_type=scope_type,
                             scope_id=scope_id,
+                            source_language=src_lang,
+                            target_language=src_target,
+                            title_translated=pr.title_translated,
+                            summary_translated=pr.summary_translated,
+                            content_md_translated=pr.content_md_translated,
+                            translation_status=pr.translation_status,
                         )
                         pages_created += 1
                     else:
@@ -177,10 +218,32 @@ async def run_commit_phase(
 
                 if embedding_provider is not None and embedding_spec is not None and page is not None:
                     try:
+                        # Source-language embedding (always written)
                         embed_text = embedding_input_text(pr.title, pr.summary, pr.content_md)
                         vector = await embedding_provider.embed(embed_text)
                         content_hash = compute_content_hash(pr.title, pr.summary, pr.content_md)
-                        await upsert_page_embedding(session, page.id, embedding_spec, vector, content_hash)
+                        await upsert_page_embedding(
+                            session, page.id, embedding_spec, vector, content_hash,
+                            language="source",
+                        )
+
+                        # Target-language embedding — only when translation succeeded
+                        if pr.translation_status == "done" and pr.content_md_translated:
+                            tgt_text = embedding_input_text(
+                                pr.title_translated or "",
+                                pr.summary_translated or "",
+                                pr.content_md_translated or "",
+                            )
+                            tgt_vector = await embedding_provider.embed(tgt_text)
+                            tgt_hash = compute_content_hash(
+                                pr.title_translated or "",
+                                pr.summary_translated or "",
+                                pr.content_md_translated or "",
+                            )
+                            await upsert_page_embedding(
+                                session, page.id, embedding_spec, tgt_vector, tgt_hash,
+                                language="target",
+                            )
                     except Exception as embed_exc:
                         logger.warning(f"MRP COMMIT embed failed for '{pr.slug}' scope={scope_type}: {embed_exc}")
 
@@ -212,6 +275,7 @@ async def run_commit_phase(
         src.progress = 100
         src.progress_message = "Done"
         src.error_message = None
+        src.auto_recover_count = 0
 
     await session.commit()
 
@@ -379,6 +443,44 @@ async def _auto_trigger_refine(source_id: uuid.UUID, plan) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Phase 4.5 — TRANSLATE helper
+# ---------------------------------------------------------------------------
+
+async def _maybe_run_translate_phase(
+    pages: list,
+    source_language: Optional[str],
+    target_language: Optional[str],
+    llm,
+) -> list:
+    """Phase 4.5 — translate every page if applicable. Mutates and returns pages."""
+    from app.ai.mrp.translator import translate_pages
+
+    if not target_language:
+        return pages
+    if not source_language:
+        # Unknown source language → skip translation.
+        return pages
+    if source_language == target_language:
+        return pages
+
+    results = await translate_pages(
+        llm=llm,
+        pages=pages,
+        source_lang=source_language,
+        target_lang=target_language,
+    )
+    for page, output in results:
+        if output is None:
+            page.translation_status = "failed"
+        else:
+            page.title_translated = output.title
+            page.summary_translated = output.summary
+            page.content_md_translated = output.content_md
+            page.translation_status = "done"
+    return pages
+
+
+# ---------------------------------------------------------------------------
 # Entry point 2: Phase 3-5
 # ---------------------------------------------------------------------------
 
@@ -482,6 +584,17 @@ async def run_refine_pipeline(
         if src:
             src.pipeline_phase = "verify"
         await session.commit()
+
+    # Phase 4.5: TRANSLATE
+    if page_results:
+        src = await session.get(Source, source_id)
+        if src and getattr(src, "target_language", None):
+            page_results = await _maybe_run_translate_phase(
+                pages=page_results,
+                source_language=src.source_language,
+                target_language=src.target_language,
+                llm=llm,
+            )
 
     # Phase 4: VERIFY
     page_results = await run_verify_phase(

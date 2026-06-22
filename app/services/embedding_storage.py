@@ -38,17 +38,19 @@ async def upsert_page_embedding(
     spec: EmbeddingModelSpec,
     vector: list[float],
     content_hash: str,
+    language: str = "source",
 ) -> None:
-    """Upsert one (page, model_spec_id) row into wiki_page_embeddings_<dim>."""
+    """Upsert one (page, model_spec_id, language) row into wiki_page_embeddings_<dim>."""
     Model = get_embedding_model_for_dim(spec.dimension)
     stmt = pg_insert(Model).values(
         page_id=page_id,
         model_spec_id=spec.id,
+        language=language,
         content_hash=content_hash,
         embedding=vector,
     )
     stmt = stmt.on_conflict_do_update(
-        index_elements=["page_id", "model_spec_id"],
+        index_elements=["page_id", "model_spec_id", "language"],
         set_={
             "embedding": stmt.excluded.embedding,
             "content_hash": stmt.excluded.content_hash,
@@ -59,13 +61,19 @@ async def upsert_page_embedding(
 
 
 async def get_existing_hash(
-    session: AsyncSession, page_id: uuid.UUID, spec_id: str, dimension: int
+    session: AsyncSession,
+    page_id: uuid.UUID,
+    spec_id: str,
+    dimension: int,
+    language: str = "source",
 ) -> Optional[str]:
     Model = get_embedding_model_for_dim(dimension)
     row = (
         await session.execute(
             select(Model.content_hash).where(
-                Model.page_id == page_id, Model.model_spec_id == spec_id
+                Model.page_id == page_id,
+                Model.model_spec_id == spec_id,
+                Model.language == language,
             )
         )
     ).scalar_one_or_none()
@@ -100,6 +108,35 @@ async def cleanup_stale_embeddings(
         )
         total += result.rowcount or 0  # type: ignore[union-attr]
     return total
+
+
+async def delete_page_embedding(
+    session: AsyncSession,
+    page_id: uuid.UUID,
+    language: str = "target",
+) -> None:
+    """Delete a page's (language) embedding row from every per-dimension table.
+
+    Used when a translation is removed or replaced so stale vectors don't
+    linger. Re-translation only ever removes the ``"target"`` slot; the
+    ``"source"`` row is left untouched.
+    """
+    from app.database.models import (
+        WikiPageEmbedding768,
+        WikiPageEmbedding1024,
+        WikiPageEmbedding1536,
+        WikiPageEmbedding3072,
+    )
+
+    for Model in (
+        WikiPageEmbedding768,
+        WikiPageEmbedding1024,
+        WikiPageEmbedding1536,
+        WikiPageEmbedding3072,
+    ):
+        await session.execute(
+            delete(Model).where(Model.page_id == page_id, Model.language == language)
+        )
 
 
 def get_spec_for_job(job: EmbeddingJob) -> EmbeddingModelSpec:

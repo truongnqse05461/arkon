@@ -1,7 +1,7 @@
 """add skill contributions
 
-Revision ID: 013
-Revises: 012
+Revision ID: 017
+Revises: 016
 Create Date: 2026-05-06 21:08:05.082274
 """
 

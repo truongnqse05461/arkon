@@ -106,6 +106,14 @@ class Source(Base):
         UUID(as_uuid=True), nullable=True,
         comment="Project/workspace ID when scope_type=project. Null for global.",
     )
+    source_language: Mapped[Optional[str]] = mapped_column(
+        String(8), nullable=True,
+        comment="Auto-detected source language (ISO 639-1: 'zh', 'en', 'vi', ...)",
+    )
+    target_language: Mapped[Optional[str]] = mapped_column(
+        String(8), nullable=True,
+        comment="Uploader-chosen target language; null = no translation",
+    )
     knowledge_type_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("knowledge_types.id", ondelete="SET NULL"),
         nullable=True,
@@ -124,6 +132,16 @@ class Source(Base):
     progress: Mapped[int] = mapped_column(Integer, default=0)
     progress_message: Mapped[Optional[str]] = mapped_column(String(500))
     job_id: Mapped[Optional[str]] = mapped_column(String(200))
+    extracted_token_count: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+        comment="tiktoken cl100k_base count of full_text. Used by upload gate.",
+    )
+    auto_recover_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+        comment="Times sweep_stuck_processing_cron has flipped this source from "
+                "'processing' back to 'error'. Reset on successful plan_ready/ready. "
+                "Gated by settings.max_auto_recover_attempts.",
+    )
     pipeline_strategy: Mapped[Optional[str]] = mapped_column(
         String(20), nullable=True,
         comment="single_pass | standard | hierarchical — set by Phase 0 triage",
@@ -291,6 +309,15 @@ class WikiPage(Base):
     page_type: Mapped[str] = mapped_column(String(30), nullable=False)
     content_md: Mapped[str] = mapped_column(Text, nullable=False, default="")
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    source_language: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    target_language: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    title_translated: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    summary_translated: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    content_md_translated: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    translation_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="skipped",
+        comment="pending | done | skipped | failed",
+    )
     # --- Scope: global or project (workspace) ---
     scope_type: Mapped[str] = mapped_column(
         String(20), default=ScopeType.GLOBAL.value,
@@ -595,8 +622,15 @@ class Department(Base):
     )
 
     # Relationships
+    employee_departments: Mapped[list["EmployeeDepartment"]] = relationship(
+        back_populates="department",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     employees: Mapped[list["Employee"]] = relationship(
-        back_populates="department", cascade="all, delete-orphan"
+        secondary="employee_departments",
+        back_populates="departments",
+        viewonly=True,
     )
     source_departments: Mapped[list["SourceDepartment"]] = relationship(
         back_populates="department", cascade="all, delete-orphan"
@@ -626,9 +660,6 @@ class Employee(Base):
     role: Mapped[str] = mapped_column(
         String(20), default="employee",
         comment="admin or employee — system-level role",
-    )
-    department_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="CASCADE")
     )
     custom_role_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("roles.id", ondelete="SET NULL"),
@@ -662,7 +693,16 @@ class Employee(Base):
     )
 
     # Relationships
-    department: Mapped["Department"] = relationship(back_populates="employees")
+    employee_departments: Mapped[list["EmployeeDepartment"]] = relationship(
+        back_populates="employee",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    departments: Mapped[list["Department"]] = relationship(
+        secondary="employee_departments",
+        back_populates="employees",
+        viewonly=True,
+    )
     custom_role: Mapped[Optional["Role"]] = relationship(back_populates="employees")
 
     __table_args__ = (
@@ -673,8 +713,42 @@ class Employee(Base):
             unique=True,
             postgresql_where=text("mcp_token_hash IS NOT NULL"),
         ),
-        Index("ix_employees_department_id", "department_id"),
         Index("ix_employees_email", "email"),
+    )
+
+    @property
+    def department_ids(self) -> list[uuid.UUID]:
+        """All departments this employee belongs to. Empty list = no dept."""
+        return [ed.department_id for ed in self.employee_departments]
+
+
+class EmployeeDepartment(Base):
+    """Many-to-many: Employee ↔ Department.
+
+    All departments are equal — there is no concept of a "primary" department.
+    `*:*:own_dept` permissions resolve to the union of all departments listed
+    here for the employee. An employee with zero rows can only see resources
+    scoped to 'global'.
+    """
+    __tablename__ = "employee_departments"
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    department_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+
+    employee: Mapped["Employee"] = relationship(back_populates="employee_departments")
+    department: Mapped["Department"] = relationship(back_populates="employee_departments")
+
+    __table_args__ = (
+        Index("ix_employee_departments_department_id", "department_id"),
     )
 
 
@@ -1010,6 +1084,10 @@ class _WikiPageEmbeddingBase:
         primary_key=True,
     )
     model_spec_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    language: Mapped[str] = mapped_column(
+        String(8), primary_key=True, default="source",
+        comment="'source' or 'target' — which half of a bilingual page this row embeds",
+    )
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     embedded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

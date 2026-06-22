@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { WikiPageDetail } from "@/types/wiki";
-import { WikiContent } from "@/components/wiki/wiki-content";
+import { BilingualPageView } from "@/components/wiki/bilingual-page-view";
 
 type SourceDetail = {
   id: string;
@@ -143,7 +143,23 @@ export function CitationPanel({ slug, onClose }: CitationPanelProps) {
             </div>
           )}
           {page && (
-            <WikiContent markdown={page.content_md} />
+            <div className="space-y-3">
+              <div>
+                <h2 className="text-base font-semibold text-foreground">{page.title}</h2>
+                {page.title_translated && page.title_translated !== page.title && (
+                  <p className="text-xs text-muted-foreground mt-0.5">{page.title_translated}</p>
+                )}
+              </div>
+              <BilingualPageView
+                title={page.title}
+                contentMd={page.content_md}
+                titleTranslated={page.title_translated ?? null}
+                contentMdTranslated={page.content_md_translated ?? null}
+                sourceLanguage={page.source_language ?? null}
+                targetLanguage={page.target_language ?? null}
+                hideSideBySide
+              />
+            </div>
           )}
         </div>
       </div>

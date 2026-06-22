@@ -7,7 +7,7 @@ import { WikiGraphData, WikiPageDetail } from "@/types/wiki";
 import { WikiGraph } from "@/components/wiki/wiki-graph";
 import { wikiTypeColor, wikiTypeGroupLabel, wikiTypeIcon } from "@/components/wiki/wiki-type-badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from "@/components/ui/sheet";
-import { WikiContent } from "@/components/wiki/wiki-content";
+import { BilingualPageView } from "@/components/wiki/bilingual-page-view";
 import { Button } from "@/components/ui/button";
 
 const PAGE_TYPES = ["entity", "concept", "topic", "source"];
@@ -108,7 +108,10 @@ export default function WikiGraphPage() {
     if (!searchQuery || graphData.nodes.length === 0) return [];
     const q = searchQuery.toLowerCase();
     return graphData.nodes.filter(
-      (n) => n.title.toLowerCase().includes(q) || n.slug.includes(q)
+      (n) =>
+        n.title.toLowerCase().includes(q) ||
+        (n.title_translated?.toLowerCase().includes(q) ?? false) ||
+        n.slug.includes(q)
     );
   }, [searchQuery, graphData]);
 
@@ -164,8 +167,11 @@ export default function WikiGraphPage() {
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
-                  const match = graphData.nodes.find((n) =>
-                    n.title.toLowerCase().includes(e.target.value.toLowerCase())
+                  const q = e.target.value.toLowerCase();
+                  const match = graphData.nodes.find(
+                    (n) =>
+                      n.title.toLowerCase().includes(q) ||
+                      (n.title_translated?.toLowerCase().includes(q) ?? false)
                   );
                   setHighlightSlug(match?.slug ?? null);
                 }}
@@ -216,23 +222,32 @@ export default function WikiGraphPage() {
         {/* Search results dropdown */}
         {searchQuery && searchMatches.length > 0 && (
           <div className="absolute top-[52px] right-5 z-20 bg-card border border-border rounded-xl shadow-lg py-1 max-h-48 overflow-y-auto w-64">
-            {searchMatches.slice(0, 8).map((n) => (
-              <button
-                key={n.slug}
-                onClick={() => {
-                  setHighlightSlug(n.slug);
-                  setSearchQuery("");
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs hover:bg-accent/50 transition-colors"
-              >
-                <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ background: wikiTypeColor(n.page_type) }}
-                />
-                <span className="truncate font-medium text-foreground">{n.title}</span>
-                <span className="text-muted-foreground ml-auto capitalize text-[10px]">{n.page_type}</span>
-              </button>
-            ))}
+            {searchMatches.slice(0, 8).map((n) => {
+              const label = n.title_translated || n.title;
+              const showSource = label !== n.title;
+              return (
+                <button
+                  key={n.slug}
+                  onClick={() => {
+                    setHighlightSlug(n.slug);
+                    setSearchQuery("");
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs hover:bg-accent/50 transition-colors"
+                >
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ background: wikiTypeColor(n.page_type) }}
+                  />
+                  <span className="flex flex-col min-w-0 flex-1">
+                    <span className="truncate font-medium text-foreground">{label}</span>
+                    {showSource && (
+                      <span className="truncate text-[10px] text-muted-foreground/70">{n.title}</span>
+                    )}
+                  </span>
+                  <span className="text-muted-foreground capitalize text-[10px] shrink-0">{n.page_type}</span>
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -286,10 +301,19 @@ export default function WikiGraphPage() {
       {/* Preview Panel (Sheet) */}
       <Sheet open={!!previewSlug} onOpenChange={(open) => !open && setPreviewSlug(null)}>
         <SheetContent showCloseButton={false} className="w-[400px] sm:w-[540px] p-0 flex flex-col border-l border-border gap-0">
-          <SheetHeader className="px-6 py-4 border-b border-border bg-card shrink-0 flex flex-row items-center justify-between space-y-0">
-            <SheetTitle className="text-lg font-heading flex-1 truncate pr-4 text-left">
-              {previewLoading ? "Loading..." : previewData?.title ?? previewSlug}
-            </SheetTitle>
+          <SheetHeader className="px-6 py-4 border-b border-border bg-card shrink-0 flex flex-row items-start justify-between space-y-0">
+            <div className="flex-1 min-w-0 pr-4">
+              <SheetTitle className="text-lg font-heading truncate text-left">
+                {previewLoading ? "Loading..." : previewData?.title ?? previewSlug}
+              </SheetTitle>
+              {!previewLoading &&
+                previewData?.title_translated &&
+                previewData.title_translated !== previewData.title && (
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                    {previewData.title_translated}
+                  </p>
+                )}
+            </div>
             <div className="flex items-center gap-2 shrink-0">
               <Button
                 variant="outline"
@@ -316,7 +340,15 @@ export default function WikiGraphPage() {
                 <span className="text-xs font-medium">Loading page...</span>
               </div>
             ) : previewData ? (
-              <WikiContent markdown={previewData.content_md} />
+              <BilingualPageView
+                title={previewData.title}
+                contentMd={previewData.content_md}
+                titleTranslated={previewData.title_translated ?? null}
+                contentMdTranslated={previewData.content_md_translated ?? null}
+                sourceLanguage={previewData.source_language ?? null}
+                targetLanguage={previewData.target_language ?? null}
+                hideSideBySide
+              />
             ) : (
               <p className="text-sm text-muted-foreground py-16 text-center">Failed to load content.</p>
             )}

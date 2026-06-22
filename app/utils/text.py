@@ -22,14 +22,18 @@ def parse_json_loose(raw: str) -> Any:
     """
     Parse a JSON value from an LLM response that may be wrapped in a code fence
     or have trailing prose. Falls back to truncating at the last `}` or `]`.
+
+    Uses ``strict=False`` so that raw control characters (``\\n``, ``\\t``, etc.)
+    inside string values — which LLMs frequently emit unescaped in long prose
+    fields — do not cause a JSONDecodeError.
     """
     cleaned = strip_code_fence(raw)
     try:
-        return json.loads(cleaned)
+        return json.loads(cleaned, strict=False)
     except json.JSONDecodeError:
         last = max(cleaned.rfind("}"), cleaned.rfind("]"))
         if last != -1:
-            return json.loads(cleaned[: last + 1])
+            return json.loads(cleaned[: last + 1], strict=False)
         raise
 
 

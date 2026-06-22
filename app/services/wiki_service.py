@@ -45,30 +45,30 @@ def _scope_filter(scope_type: str = "global", scope_id: Optional[uuid.UUID] = No
     return and_(WikiPage.scope_type == scope_type, WikiPage.scope_id.is_(None))
 
 
-def _scope_filter_with_dept(department_id: Optional[uuid.UUID] = None):
-    """OR-filter: global pages + department pages visible to the given dept member.
+def _scope_filter_with_dept(department_ids: Optional[list[uuid.UUID]] = None):
+    """OR-filter: global pages + department pages visible to the given dept members.
 
     DEPRECATED for MCP read paths — does NOT include project-scoped pages,
     which made wiki pages of workspaces invisible to their own members. Use
     `_scope_filter_for_identity` instead.
     """
-    if department_id:
+    if department_ids:
         return or_(
             and_(WikiPage.scope_type == "global", WikiPage.scope_id.is_(None)),
-            and_(WikiPage.scope_type == "department", WikiPage.scope_id == department_id),
+            and_(WikiPage.scope_type == "department", WikiPage.scope_id.in_(department_ids)),
         )
     return _scope_filter("global")
 
 
 def _scope_filter_for_identity(
-    department_id: Optional[uuid.UUID] = None,
+    department_ids: Optional[list[uuid.UUID]] = None,
     project_ids: Optional[list[uuid.UUID]] = None,
 ):
     """OR-filter for the MCP read path: every wiki page the user can see.
 
     Includes:
       - All global pages.
-      - Department pages of the user's own department.
+      - Department pages of every department the user belongs to.
       - Project pages of every workspace the user is a member of.
 
     Without the project branch, members of a workspace cannot find their own
@@ -76,9 +76,9 @@ def _scope_filter_for_identity(
     drill-down and assume the page doesn't exist.
     """
     clauses = [and_(WikiPage.scope_type == "global", WikiPage.scope_id.is_(None))]
-    if department_id is not None:
+    if department_ids:
         clauses.append(
-            and_(WikiPage.scope_type == "department", WikiPage.scope_id == department_id)
+            and_(WikiPage.scope_type == "department", WikiPage.scope_id.in_(department_ids))
         )
     if project_ids:
         clauses.append(
@@ -88,13 +88,13 @@ def _scope_filter_for_identity(
 
 
 def _inverse_scope_filter_for_identity(
-    department_id: Optional[uuid.UUID] = None,
+    department_ids: Optional[list[uuid.UUID]] = None,
     project_ids: Optional[list[uuid.UUID]] = None,
 ):
     """Pages OUTSIDE the user's accessible scope — used by out-of-scope hints.
 
     Excludes global pages (everyone sees those) so the inverse is just:
-      - Department pages of OTHER departments.
+      - Department pages of departments the user does NOT belong to.
       - Project pages of workspaces the user is NOT a member of.
     """
     project_clause = (
@@ -103,8 +103,8 @@ def _inverse_scope_filter_for_identity(
         else WikiPage.scope_type == "project"
     )
     dept_clause = (
-        and_(WikiPage.scope_type == "department", WikiPage.scope_id != department_id)
-        if department_id is not None
+        and_(WikiPage.scope_type == "department", WikiPage.scope_id.notin_(department_ids))
+        if department_ids
         else WikiPage.scope_type == "department"
     )
     return or_(dept_clause, project_clause)
@@ -240,11 +240,25 @@ async def get_neighborhood(
         return {"nodes": [], "edges": []}
 
     pages_result = await session.execute(
-        select(WikiPage.slug, WikiPage.title, WikiPage.page_type)
+        select(
+            WikiPage.slug,
+            WikiPage.title,
+            WikiPage.page_type,
+            WikiPage.title_translated,
+            WikiPage.source_language,
+            WikiPage.target_language,
+        )
         .where(WikiPage.slug.in_(slugs))
     )
     nodes = [
-        {"slug": r.slug, "title": r.title, "page_type": r.page_type}
+        {
+            "slug": r.slug,
+            "title": r.title,
+            "page_type": r.page_type,
+            "title_translated": r.title_translated,
+            "source_language": r.source_language,
+            "target_language": r.target_language,
+        }
         for r in pages_result.all()
     ]
     edges_result = await session.execute(
@@ -312,7 +326,7 @@ async def list_pages(
     offset: int = 0,
     scope_type: str = "global",
     scope_id: Optional[uuid.UUID] = None,
-    department_id: Optional[uuid.UUID] = None,
+    department_ids: Optional[list[uuid.UUID]] = None,
     project_ids: Optional[list[uuid.UUID]] = None,
     all_scopes: bool = False,
 ) -> list[WikiPage]:
@@ -320,14 +334,15 @@ async def list_pages(
 
     Scope behaviour:
       - `all_scopes=True`: no scope filter at all (admin bypass).
-      - `department_id` (and optionally `project_ids`) given: union of global
-        + user's department + every workspace the user is a member of.
+      - `department_ids` (and optionally `project_ids`) given: union of global
+        + every department the user belongs to + every workspace the user is
+        a member of.
       - Otherwise: exact `scope_type`/`scope_id` (pipeline write path).
     """
     if all_scopes:
         scope_clause = None
-    elif department_id is not None or project_ids:
-        scope_clause = _scope_filter_for_identity(department_id, project_ids)
+    elif department_ids or project_ids:
+        scope_clause = _scope_filter_for_identity(department_ids, project_ids)
     else:
         scope_clause = _scope_filter(scope_type, scope_id)
     stmt = (
@@ -362,7 +377,7 @@ async def search_pages_semantic(
     scope_type: str = "global",
     scope_id: Optional[uuid.UUID] = None,
     spec_id: Optional[str] = None,
-    department_id: Optional[uuid.UUID] = None,
+    department_ids: Optional[list[uuid.UUID]] = None,
     project_ids: Optional[list[uuid.UUID]] = None,
     inverse_scope: bool = False,
     all_scopes: bool = False,
@@ -376,8 +391,8 @@ async def search_pages_semantic(
     only used by tests and internal tooling.
 
     Scope behaviour:
-      - If `department_id` or `project_ids` is given: returns pages from
-        global + user's department + user's workspaces (MCP read path).
+      - If `department_ids` or `project_ids` is given: returns pages from
+        global + user's departments + user's workspaces (MCP read path).
       - If `inverse_scope=True`: returns pages OUTSIDE that scope (other
         departments, workspaces the user isn't a member of). Used to surface
         "you don't have access" hints.
@@ -402,9 +417,9 @@ async def search_pages_semantic(
     if all_scopes and not inverse_scope:
         scope_clause = None
     elif inverse_scope:
-        scope_clause = _inverse_scope_filter_for_identity(department_id, project_ids)
-    elif department_id is not None or project_ids:
-        scope_clause = _scope_filter_for_identity(department_id, project_ids)
+        scope_clause = _inverse_scope_filter_for_identity(department_ids, project_ids)
+    elif department_ids or project_ids:
+        scope_clause = _scope_filter_for_identity(department_ids, project_ids)
     else:
         scope_clause = _scope_filter(scope_type, scope_id)
 
@@ -418,12 +433,13 @@ async def search_pages_semantic(
     stmt = (
         select(
             WikiPage,
+            Emb.language.label("matched_language"),
             (1 - Emb.embedding.cosine_distance(query_embedding)).label("similarity"),
         )
         .join(Emb, Emb.page_id == WikiPage.id)
         .where(and_(*where_clauses))
         .order_by(Emb.embedding.cosine_distance(query_embedding))
-        .limit(top_k)
+        .limit(top_k * 2)  # over-fetch so dedupe per page_id can still return top_k
     )
     if allowed_kt_slugs:
         stmt = stmt.where(
@@ -433,7 +449,23 @@ async def search_pages_semantic(
             )
         )
     result = await session.execute(stmt)
-    return [(row[0], float(row[1])) for row in result.all()]
+
+    # Dedupe per page_id keeping the first hit (best similarity by ORDER BY).
+    # The matched_language is attached as a transient attribute so callers that
+    # care can read `page.matched_language`; callers that only unpack
+    # (page, similarity) keep working unchanged.
+    seen: dict[uuid.UUID, tuple[WikiPage, float]] = {}
+    for row in result.all():
+        page = row[0]
+        matched_lang = row[1]
+        sim = float(row[2])
+        if page.id in seen:
+            continue
+        page.matched_language = matched_lang
+        seen[page.id] = (page, sim)
+        if len(seen) >= top_k:
+            break
+    return list(seen.values())
 
 
 # ---------------------------------------------------------------------------
@@ -452,6 +484,12 @@ async def apply_create(
     embedding: Optional[list[float]] = None,
     scope_type: str = "global",
     scope_id: Optional[uuid.UUID] = None,
+    source_language: Optional[str] = None,
+    target_language: Optional[str] = None,
+    title_translated: Optional[str] = None,
+    summary_translated: Optional[str] = None,
+    content_md_translated: Optional[str] = None,
+    translation_status: str = "skipped",
 ) -> WikiPage:
     """Insert a new page in the given scope. Conflicts raise — caller should use update."""
     page = WikiPage(
@@ -466,6 +504,12 @@ async def apply_create(
         scope_type=scope_type,
         scope_id=scope_id,
         version=1,
+        source_language=source_language,
+        target_language=target_language,
+        title_translated=title_translated,
+        summary_translated=summary_translated,
+        content_md_translated=content_md_translated,
+        translation_status=translation_status,
     )
     _ = embedding  # backward-compat parameter, ignored
     session.add(page)
@@ -489,6 +533,12 @@ async def apply_update(
     embedding: Optional[list[float]] = None,
     scope_type: str = "global",
     scope_id: Optional[uuid.UUID] = None,
+    source_language: Optional[str] = None,
+    target_language: Optional[str] = None,
+    title_translated: Optional[str] = None,
+    summary_translated: Optional[str] = None,
+    content_md_translated: Optional[str] = None,
+    translation_status: str = "skipped",
 ) -> Optional[WikiPage]:
     """
     Update an existing page atomically within the given scope:
@@ -517,6 +567,30 @@ async def apply_update(
     # wiki_page_embeddings_<dim> table. The `embedding` parameter is accepted
     # only for backward compatibility and ignored here.
     _ = embedding
+
+    # Target language is immutable once set — first writer wins.
+    if page.target_language is None and target_language is not None:
+        page.target_language = target_language
+        page.source_language = source_language or page.source_language
+    elif (
+        page.target_language is not None
+        and target_language
+        and target_language != page.target_language
+    ):
+        logger.warning(
+            f"apply_update: page {page.slug} target_language={page.target_language} "
+            f"but source requested {target_language}; ignoring source's choice."
+        )
+
+    if title_translated is not None:
+        page.title_translated = title_translated
+    if summary_translated is not None:
+        page.summary_translated = summary_translated
+    if content_md_translated is not None:
+        page.content_md_translated = content_md_translated
+    if translation_status:
+        page.translation_status = translation_status
+
     page.version = (page.version or 1) + 1
     await session.flush()
     await refresh_links(session, page.id, slug, new_content_md)
@@ -580,7 +654,14 @@ async def regenerate_index(
     Grouped by page_type, alphabetical within group. Excludes reserved slugs.
     """
     stmt = (
-        select(WikiPage.slug, WikiPage.title, WikiPage.page_type, WikiPage.summary)
+        select(
+            WikiPage.slug,
+            WikiPage.title,
+            WikiPage.page_type,
+            WikiPage.summary,
+            WikiPage.title_translated,
+            WikiPage.summary_translated,
+        )
         .where(
             WikiPage.slug.notin_([INDEX_SLUG, LOG_SLUG]),
             _scope_filter(scope_type, scope_id),
@@ -589,9 +670,11 @@ async def regenerate_index(
     )
     rows = (await session.execute(stmt)).all()
 
-    by_type: dict[str, list[tuple[str, str, str]]] = {}
+    by_type: dict[str, list[tuple[str, str, str, Optional[str], Optional[str]]]] = {}
     for r in rows:
-        by_type.setdefault(r.page_type, []).append((r.slug, r.title, r.summary or ""))
+        by_type.setdefault(r.page_type, []).append(
+            (r.slug, r.title, r.summary or "", r.title_translated, r.summary_translated)
+        )
 
     lines = ["# Wiki Index", ""]
     if not by_type:
@@ -600,9 +683,15 @@ async def regenerate_index(
         for ptype in sorted(by_type.keys()):
             lines.append(f"## {ptype.capitalize()}")
             lines.append("")
-            for slug, title, summary in by_type[ptype]:
+            for slug, title, summary, title_tr, summary_tr in by_type[ptype]:
                 summary_part = f" — {summary}" if summary else ""
-                lines.append(f"- [[{slug}|{title}]]{summary_part}")
+                lines.append(f"- [[{slug}|{title}]]{summary_part}  ")
+                has_tr_title = title_tr and title_tr != title
+                has_tr_summary = summary_tr and summary_tr != summary
+                if has_tr_title or has_tr_summary:
+                    tr_title = title_tr if has_tr_title else title
+                    tr_summary_part = f" — {summary_tr}" if has_tr_summary else ""
+                    lines.append(f"  _{tr_title}{tr_summary_part}_")
             lines.append("")
 
     new_md = "\n".join(lines).rstrip() + "\n"

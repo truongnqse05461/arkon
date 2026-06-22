@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { WikiPageDetail, DraftResponse } from "@/types/wiki";
 import { WikiPageTree } from "@/components/wiki/wiki-page-tree";
 import { WikiContent } from "@/components/wiki/wiki-content";
+import { BilingualPageView } from "@/components/wiki/bilingual-page-view";
 import { WikiSidebarRight } from "@/components/wiki/wiki-backlinks";
 import { WikiEditor } from "@/components/wiki/wiki-editor";
 import { WikiDraftBanner } from "@/components/wiki/wiki-draft-banner";
@@ -104,7 +105,7 @@ export default function WikiPageViewer() {
   const isGlobalAdmin = user?.role === "admin";
   const isDeptScoped = scopeType === "department";
   const isOwnDept =
-    isDeptScoped && !!scopeId && !!user?.department_id && user.department_id === scopeId;
+    isDeptScoped && !!scopeId && !!user && user.department_ids.includes(scopeId);
 
   // Can directly edit (PUT /wiki/pages/{slug}). Department-scoped pages
   // require wiki:write:all — own_dept only grants propose access.
@@ -149,7 +150,10 @@ export default function WikiPageViewer() {
       }
       if (st === "department" && sid) {
         if (isGlobalAdmin || hasPermission("wiki:write:all")) return "direct";
-        if (hasPermission("wiki:write:own_dept") && user.department_id === sid) {
+        if (
+          hasPermission("wiki:write:own_dept") &&
+          user.department_ids.includes(sid)
+        ) {
           return "propose";
         }
         return null;
@@ -512,7 +516,15 @@ export default function WikiPageViewer() {
                   onCancel={() => setMode("view")}
                 />
               ) : (
-                <WikiContent markdown={page.content_md} linkSuffix={scopeLinkSuffix} />
+                <BilingualPageView
+                  title={page.title}
+                  contentMd={page.content_md}
+                  titleTranslated={page.title_translated ?? null}
+                  contentMdTranslated={page.content_md_translated ?? null}
+                  sourceLanguage={page.source_language ?? null}
+                  targetLanguage={page.target_language ?? null}
+                  linkSuffix={scopeLinkSuffix}
+                />
               )}
             </div>
           ) : null}
