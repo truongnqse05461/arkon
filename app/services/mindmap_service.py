@@ -1,7 +1,9 @@
 """Mindmap Service - AI generation of wiki topic trees."""
 
 import json
+import re
 import uuid
+from difflib import SequenceMatcher
 from typing import Optional
 
 from sqlalchemy import select
@@ -103,6 +105,91 @@ def _filter_pages_for_mindmap(pages: list[WikiPage]) -> list[WikiPage]:
     ]
 
 
+# --- Tree node enrichment ---
+
+_SUMMARY_MAX_LEN = 200
+_FUZZY_THRESHOLD = 0.75
+
+
+def _normalize_name(name: str) -> str:
+    """Lowercase, strip punctuation, collapse whitespace."""
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", name.lower())).strip()
+
+
+def _build_page_lookup(pages: list[WikiPage]) -> dict[str, list[dict]]:
+    """Build normalized_title -> list of page metadata dicts."""
+    lookup: dict[str, list[dict]] = {}
+    for page in pages:
+        title = _page_display_title(page)
+        if not title:
+            continue
+        key = _normalize_name(title)
+        summary_raw = _first_text(
+            getattr(page, "summary_translated", None),
+            getattr(page, "summary", None),
+        )
+        entry = {
+            "slug": getattr(page, "slug", ""),
+            "page_type": getattr(page, "page_type", "concept"),
+            "summary": summary_raw[:_SUMMARY_MAX_LEN] if summary_raw else "",
+        }
+        lookup.setdefault(key, []).append(entry)
+    return lookup
+
+
+def _match_node(node_name: str, lookup: dict[str, list[dict]]) -> Optional[dict]:
+    """Find best matching page for a node name. Returns metadata dict or None."""
+    normalized = _normalize_name(node_name)
+    if not normalized:
+        return None
+
+    # Exact match
+    if normalized in lookup:
+        candidates = lookup[normalized]
+        return max(candidates, key=lambda c: len(c.get("summary", "")))
+
+    # Substring match — node name contained in page title or vice versa
+    substring_candidates: list[tuple[str, list[dict]]] = []
+    for page_key, entries in lookup.items():
+        if normalized in page_key or page_key in normalized:
+            substring_candidates.append((page_key, entries))
+    if substring_candidates:
+        # Prefer the shortest page_key (most precise match)
+        best_key, best_entries = min(substring_candidates, key=lambda t: len(t[0]))
+        return max(best_entries, key=lambda c: len(c.get("summary", "")))
+
+    # Fuzzy match
+    best_score = 0.0
+    best_entry = None
+    for page_key, entries in lookup.items():
+        score = SequenceMatcher(None, normalized, page_key).ratio()
+        if score > best_score:
+            best_score = score
+            best_entry = max(entries, key=lambda c: len(c.get("summary", "")))
+
+    if best_score >= _FUZZY_THRESHOLD and best_entry:
+        return best_entry
+    return None
+
+
+def _enrich_tree_nodes(tree: dict, pages: list[WikiPage]) -> dict:
+    """Enrich tree nodes with wiki page metadata (slug, type, summary)."""
+    lookup = _build_page_lookup(pages)
+
+    def enrich_node(node: dict) -> dict:
+        match = _match_node(node.get("name", ""), lookup)
+        if match:
+            node["page_slug"] = match["slug"]
+            node["page_type"] = match["page_type"]
+            if match["summary"]:
+                node["summary"] = match["summary"]
+        for child in node.get("children", []):
+            enrich_node(child)
+        return node
+
+    return enrich_node(tree)
+
+
 def _build_payload(pages: list) -> str:
     if len(pages) < SMALL_WIKI_THRESHOLD:
         lines = [
@@ -167,6 +254,9 @@ async def generate_mindmap(
 
     if not isinstance(tree, dict):
         raise ValueError(f"LLM returned unexpected JSON shape: {type(tree).__name__}")
+
+    tree = _enrich_tree_nodes(tree, pages)
+
     title = str(tree.get("name", "Knowledge Base"))
 
     existing = await get_mindmap(db, scope_type, scope_id)

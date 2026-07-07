@@ -11,6 +11,7 @@ def make_page(
     scope_id=None,
     slug: str = "page",
     summary: str = "",
+    page_type: str = "concept",
     title_translated=None,
     summary_translated=None,
     content_md_translated=None,
@@ -19,6 +20,7 @@ def make_page(
     p = MagicMock()
     p.slug = slug
     p.title = title
+    p.page_type = page_type
     p.summary = summary
     p.content_md = content
     p.title_translated = title_translated
@@ -311,3 +313,123 @@ async def test_generate_mindmap_raises_on_non_dict_json():
         with patch("app.services.mindmap_service.get_mindmap", return_value=None):
             with pytest.raises(ValueError, match="unexpected JSON shape"):
                 await generate_mindmap(db, "global", None)
+
+
+# --- _enrich_tree_nodes tests ---
+
+
+def test_enrich_tree_exact_match():
+    from app.services.mindmap_service import _enrich_tree_nodes
+
+    pages = [
+        make_page("Authentication", slug="auth", summary="Auth methods", content="x" * 60),
+    ]
+    tree = {"name": "KB", "children": [{"name": "Authentication", "children": []}]}
+    result = _enrich_tree_nodes(tree, pages)
+    child = result["children"][0]
+    assert child["page_slug"] == "auth"
+    assert child["page_type"] == "concept"
+    assert child["summary"] == "Auth methods"
+
+
+def test_enrich_tree_fuzzy_match():
+    from app.services.mindmap_service import _enrich_tree_nodes
+
+    pages = [
+        make_page("User Authentication Methods", slug="user-auth", summary="How users authenticate", content="x" * 60),
+    ]
+    tree = {"name": "KB", "children": [{"name": "Authentication", "children": []}]}
+    result = _enrich_tree_nodes(tree, pages)
+    child = result["children"][0]
+    assert child["page_slug"] == "user-auth"
+
+
+def test_enrich_tree_no_match():
+    from app.services.mindmap_service import _enrich_tree_nodes
+
+    pages = [
+        make_page("Deployment Guide", slug="deploy", summary="Deploy steps", content="x" * 60),
+    ]
+    tree = {"name": "KB", "children": [{"name": "Authentication", "children": []}]}
+    result = _enrich_tree_nodes(tree, pages)
+    child = result["children"][0]
+    assert "page_slug" not in child
+
+
+def test_enrich_tree_summary_truncated():
+    from app.services.mindmap_service import _enrich_tree_nodes
+
+    long_summary = "x" * 300
+    pages = [
+        make_page("Auth", slug="auth", summary=long_summary, content="x" * 60),
+    ]
+    tree = {"name": "KB", "children": [{"name": "Auth", "children": []}]}
+    result = _enrich_tree_nodes(tree, pages)
+    assert len(result["children"][0]["summary"]) <= 200
+
+
+def test_enrich_tree_nested_nodes():
+    from app.services.mindmap_service import _enrich_tree_nodes
+
+    pages = [
+        make_page("Auth", slug="auth", summary="Auth", content="x" * 60),
+        make_page("OAuth", slug="oauth", summary="OAuth flow", content="x" * 60),
+    ]
+    tree = {
+        "name": "KB",
+        "children": [
+            {"name": "Auth", "children": [
+                {"name": "OAuth", "children": []}
+            ]}
+        ],
+    }
+    result = _enrich_tree_nodes(tree, pages)
+    assert result["children"][0]["page_slug"] == "auth"
+    assert result["children"][0]["children"][0]["page_slug"] == "oauth"
+
+
+def test_enrich_tree_prefers_longer_summary_on_ambiguous_match():
+    from app.services.mindmap_service import _enrich_tree_nodes
+
+    pages = [
+        make_page("API", slug="api-short", summary="Short", content="x" * 60),
+        make_page("API", slug="api-long", summary="A much longer and more detailed summary about APIs", content="x" * 60),
+    ]
+    tree = {"name": "KB", "children": [{"name": "API", "children": []}]}
+    result = _enrich_tree_nodes(tree, pages)
+    assert result["children"][0]["page_slug"] == "api-long"
+
+
+def test_enrich_tree_preserves_existing_fields():
+    from app.services.mindmap_service import _enrich_tree_nodes
+
+    pages = [make_page("Auth", slug="auth", summary="Auth", content="x" * 60)]
+    tree = {"name": "KB", "children": [{"name": "Auth", "children": [], "custom": "value"}]}
+    result = _enrich_tree_nodes(tree, pages)
+    assert result["children"][0]["custom"] == "value"
+    assert result["children"][0]["page_slug"] == "auth"
+
+
+def test_enrich_tree_page_type_propagation():
+    from app.services.mindmap_service import _enrich_tree_nodes
+
+    pages = [
+        make_page("Users", slug="users", page_type="entity", summary="User model", content="x" * 60),
+        make_page("Auth", slug="auth", page_type="concept", summary="Auth methods", content="x" * 60),
+    ]
+    tree = {"name": "KB", "children": [
+        {"name": "Users", "children": []},
+        {"name": "Auth", "children": []},
+    ]}
+    result = _enrich_tree_nodes(tree, pages)
+    assert result["children"][0]["page_type"] == "entity"
+    assert result["children"][1]["page_type"] == "concept"
+
+
+def test_enrich_tree_empty_children():
+    from app.services.mindmap_service import _enrich_tree_nodes
+
+    pages = []
+    tree = {"name": "KB", "children": []}
+    result = _enrich_tree_nodes(tree, pages)
+    assert result == {"name": "KB", "children": []}
