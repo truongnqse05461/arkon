@@ -433,3 +433,15 @@ def test_enrich_tree_empty_children():
     tree = {"name": "KB", "children": []}
     result = _enrich_tree_nodes(tree, pages)
     assert result == {"name": "KB", "children": []}
+
+
+def test_enrich_tree_fuzzy_match_via_sequence_matcher():
+    from app.services.mindmap_service import _enrich_tree_nodes
+    pages = [
+        make_page("Authentication Service", slug="auth-svc", summary="Auth service docs", content="x" * 60),
+    ]
+    tree = {"name": "KB", "children": [{"name": "Authentication System", "children": []}]}
+    result = _enrich_tree_nodes(tree, pages)
+    child = result["children"][0]
+    # "authentication system" vs "authentication service" — not substrings, but SequenceMatcher ratio ~0.79
+    assert child["page_slug"] == "auth-svc"

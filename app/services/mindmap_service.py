@@ -148,15 +148,24 @@ def _match_node(node_name: str, lookup: dict[str, list[dict]]) -> Optional[dict]
         candidates = lookup[normalized]
         return max(candidates, key=lambda c: len(c.get("summary", "")))
 
-    # Substring match — node name contained in page title or vice versa
-    substring_candidates: list[tuple[str, list[dict]]] = []
+    # Substring match — pragmatic middle tier between exact and fuzzy.
+    # Heuristic: the shorter name must be at least 50% of the longer name's
+    # length to avoid false positives like "API" matching "REST API Design".
+    norm_len = len(normalized)
+    best_sub_entry = None
+    best_sub_len_diff = float("inf")
     for page_key, entries in lookup.items():
+        shorter = min(norm_len, len(page_key))
+        longer = max(norm_len, len(page_key))
+        if shorter < longer * 0.5:
+            continue
         if normalized in page_key or page_key in normalized:
-            substring_candidates.append((page_key, entries))
-    if substring_candidates:
-        # Prefer the shortest page_key (most precise match)
-        best_key, best_entries = min(substring_candidates, key=lambda t: len(t[0]))
-        return max(best_entries, key=lambda c: len(c.get("summary", "")))
+            len_diff = abs(norm_len - len(page_key))
+            if len_diff < best_sub_len_diff:
+                best_sub_len_diff = len_diff
+                best_sub_entry = max(entries, key=lambda c: len(c.get("summary", "")))
+    if best_sub_entry:
+        return best_sub_entry
 
     # Fuzzy match
     best_score = 0.0
