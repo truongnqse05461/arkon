@@ -1,0 +1,73 @@
+"use client";
+
+import { useCallback } from "react";
+import { MindMapTree } from "@/components/chat/mindmap-tree";
+
+type MindmapData = {
+  id: string;
+  scope_type: string;
+  scope_id: string | null;
+  title: string;
+  tree_json: Record<string, unknown>;
+  source_type: string;
+  wiki_page_count: number;
+  generated_at: string;
+};
+
+type MindmapViewerProps = {
+  mindmap: MindmapData;
+  onBack: () => void;
+  onRegenerate: () => void;
+  onDelete: () => void;
+};
+
+function formatAge(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const days = Math.floor(diff / 86_400_000);
+  if (days === 0) return "today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
+
+export function MindmapViewer({ mindmap, onBack, onRegenerate, onDelete }: MindmapViewerProps) {
+  const handleNodeClick = useCallback((node: { name: string; page_slug?: string }) => {
+    if (node.page_slug) {
+      if (node.page_slug.startsWith("source:")) {
+        return;
+      }
+      window.open(`/wiki/${node.page_slug}`, "_blank");
+    }
+  }, []);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border shrink-0">
+        <button type="button" onClick={onBack} className="text-muted-foreground hover:text-foreground transition-colors" title="Back to list">
+          <span className="material-symbols-outlined">arrow_back</span>
+        </button>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-sm font-semibold truncate">{mindmap.title}</h2>
+          <p className="text-xs text-muted-foreground">
+            {mindmap.wiki_page_count} pages · {mindmap.source_type === "source_docs" ? "Source Docs" : "Wiki"} · {formatAge(mindmap.generated_at)}
+          </p>
+        </div>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={onRegenerate} title="Regenerate" className="p-2 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+            <span className="material-symbols-outlined text-[20px]">refresh</span>
+          </button>
+          <button type="button" onClick={onDelete} title="Delete" className="p-2 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
+            <span className="material-symbols-outlined text-[20px]">delete</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0">
+        <MindMapTree
+          tree={mindmap.tree_json as any}
+          onNodeClick={handleNodeClick}
+          metadata={{ pageCount: mindmap.wiki_page_count, generatedAt: mindmap.generated_at }}
+        />
+      </div>
+    </div>
+  );
+}

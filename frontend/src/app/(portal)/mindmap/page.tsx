@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { MindmapList } from "@/components/mindmap/mindmap-list";
+import { MindmapViewer } from "@/components/mindmap/mindmap-viewer";
 import { GenerationDialog } from "@/components/mindmap/generation-dialog";
 import { api } from "@/lib/api";
 
@@ -18,14 +19,30 @@ type MindmapSummary = {
   generated_at: string;
 };
 
+type MindmapData = {
+  id: string;
+  scope_type: string;
+  scope_id: string | null;
+  title: string;
+  tree_json: Record<string, unknown>;
+  source_type: string;
+  wiki_page_count: number;
+  generated_at: string;
+};
+
 export default function MindmapPage() {
+  const [viewerMindmap, setViewerMindmap] = useState<MindmapData | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState<MindmapSummary | null>(null);
   const [generationOpen, setGenerationOpen] = useState(false);
 
-  const handleView = useCallback((mm: MindmapSummary) => {
-    // For now, open in fullscreen viewer (will be implemented in Task 8)
-    window.location.href = `/mindmap?view=${mm.id}`;
+  const handleView = useCallback(async (mm: MindmapSummary) => {
+    try {
+      const data = await api<MindmapData>(`/api/mindmap?scope_type=${mm.scope_type}${mm.scope_id ? `&scope_id=${mm.scope_id}` : ""}`);
+      setViewerMindmap(data);
+    } catch {
+      // Handle error
+    }
   }, []);
 
   const handleRegenerate = useCallback(async (mm: MindmapSummary) => {
@@ -47,11 +64,49 @@ export default function MindmapPage() {
     try {
       await api(`/api/mindmap/${confirmDelete.id}`, { method: "DELETE" });
       setConfirmDelete(null);
+      setViewerMindmap(null);
       setRefreshKey((k) => k + 1);
     } catch {
       // Handle error
     }
   }, [confirmDelete]);
+
+  const handleGenerated = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
+
+  if (viewerMindmap) {
+    return (
+      <MindmapViewer
+        mindmap={viewerMindmap}
+        onBack={() => setViewerMindmap(null)}
+        onRegenerate={() => {
+          setViewerMindmap(null);
+          handleRegenerate({
+            id: viewerMindmap.id,
+            scope_type: viewerMindmap.scope_type,
+            scope_id: viewerMindmap.scope_id,
+            title: viewerMindmap.title,
+            source_type: viewerMindmap.source_type,
+            wiki_page_count: viewerMindmap.wiki_page_count,
+            generated_at: viewerMindmap.generated_at,
+          });
+        }}
+        onDelete={() => {
+          setViewerMindmap(null);
+          setConfirmDelete({
+            id: viewerMindmap.id,
+            scope_type: viewerMindmap.scope_type,
+            scope_id: viewerMindmap.scope_id,
+            title: viewerMindmap.title,
+            source_type: viewerMindmap.source_type,
+            wiki_page_count: viewerMindmap.wiki_page_count,
+            generated_at: viewerMindmap.generated_at,
+          });
+        }}
+      />
+    );
+  }
 
   return (
     <>
@@ -89,7 +144,7 @@ export default function MindmapPage() {
         )}
       </div>
 
-      <GenerationDialog open={generationOpen} onOpenChange={setGenerationOpen} onGenerated={() => setRefreshKey((k) => k + 1)} />
+      <GenerationDialog open={generationOpen} onOpenChange={setGenerationOpen} onGenerated={handleGenerated} />
 
       {/* Delete confirmation dialog */}
       {confirmDelete && (
