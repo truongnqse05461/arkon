@@ -150,8 +150,16 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
   // Close popover on zoom/pan
   const handleUpdate = useCallback(({ zoom: z }: { zoom: number }) => {
     setZoom(Math.min(Math.max(z, 0.2), 3));
-    setPopoverState(null);
   }, []);
+
+  // Close popover only when zoom actually changes (user zoomed)
+  const prevZoomRef = useRef(zoom);
+  useEffect(() => {
+    if (prevZoomRef.current !== zoom) {
+      prevZoomRef.current = zoom;
+      setPopoverState(null);
+    }
+  }, [zoom]);
 
   const handleNodeClick = useCallback((node: TreeNode) => {
     // Find the SVG foreignObject element for this node
