@@ -162,10 +162,15 @@ export function MindMapPanel({ onNodeClick }: MindMapPanelProps) {
     if (found) setSelectedScope(found);
   }, [scopes]);
 
-  const handleNodeClick = useCallback((name: string) => {
-    if (panelState === "fullscreen") setPanelState("open");
-    onNodeClick?.(name);
-  }, [panelState, onNodeClick]);
+  const handleNodeClick = useCallback((node: { name: string; page_slug?: string }) => {
+    if (node.page_slug) {
+      // Navigate to wiki page
+      window.open(`/wiki/${node.page_slug}`, "_blank");
+    } else {
+      // Fallback: seed chat input
+      onNodeClick?.(node.name);
+    }
+  }, [onNodeClick]);
 
   const scopeValue = `${selectedScope.type}|${selectedScope.id ?? ""}`;
   const isGenerating = status === "generating";
@@ -174,7 +179,18 @@ export function MindMapPanel({ onNodeClick }: MindMapPanelProps) {
   // Render helpers
   // ---------------------------------------------------------------------------
 
-  const header = (inFullscreen = false) => (
+  const header = (inFullscreen = false) => {
+    // Group scopes by type
+    const groupedScopes = scopes.reduce(
+      (acc, s) => {
+        acc[s.type] = acc[s.type] || [];
+        acc[s.type].push(s);
+        return acc;
+      },
+      {} as Record<string, Scope[]>,
+    );
+
+    return (
     <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30 shrink-0">
       <span className="text-xs font-bold text-foreground flex-shrink-0">
         <span
@@ -191,30 +207,45 @@ export function MindMapPanel({ onNodeClick }: MindMapPanelProps) {
         disabled={isGenerating}
         className="flex-1 min-w-0 text-xs border border-border rounded px-1.5 py-0.5 bg-background text-foreground disabled:opacity-50"
       >
-        {scopes.map((s) => (
+        {groupedScopes["global"]?.map((s) => (
           <option key={`${s.type}|${s.id ?? ""}`} value={`${s.type}|${s.id ?? ""}`}>
-            {s.type === "global" ? "🌐 " : s.type === "department" ? "🏢 " : "📁 "}
-            {s.label}
+            🌐 {s.label}
           </option>
         ))}
+        {groupedScopes["department"]?.length > 0 && (
+          <optgroup label="Departments">
+            {groupedScopes["department"].map((s) => (
+              <option key={`${s.type}|${s.id ?? ""}`} value={`${s.type}|${s.id ?? ""}`}>
+                🏢 {s.label}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {groupedScopes["project"]?.length > 0 && (
+          <optgroup label="Projects">
+            {groupedScopes["project"].map((s) => (
+              <option key={`${s.type}|${s.id ?? ""}`} value={`${s.type}|${s.id ?? ""}`}>
+                📁 {s.label}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
       <div className="flex items-center gap-1 flex-shrink-0">
-        {inFullscreen && (
-          <button
-            type="button"
-            onClick={handleRegenerate}
-            disabled={isGenerating || status === "empty"}
-            title="Regenerate"
-            className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 px-1.5 py-0.5 rounded hover:bg-muted transition-colors"
+        <button
+          type="button"
+          onClick={handleRegenerate}
+          disabled={isGenerating || status === "empty"}
+          title="Regenerate"
+          className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 px-1.5 py-0.5 rounded hover:bg-muted transition-colors"
+        >
+          <span
+            className="material-symbols-outlined text-[14px]"
+            style={{ fontVariationSettings: "'FILL' 0, 'wght' 300" }}
           >
-            <span
-              className="material-symbols-outlined text-[14px]"
-              style={{ fontVariationSettings: "'FILL' 0, 'wght' 300" }}
-            >
-              refresh
-            </span>
-          </button>
-        )}
+            refresh
+          </span>
+        </button>
         <button
           type="button"
           onClick={() => setPanelState(panelState === "fullscreen" ? "open" : "fullscreen")}
@@ -261,7 +292,8 @@ export function MindMapPanel({ onNodeClick }: MindMapPanelProps) {
         )}
       </div>
     </div>
-  );
+    );
+  };
 
   const body = () => {
     if (status === "loading") {
@@ -274,8 +306,17 @@ export function MindMapPanel({ onNodeClick }: MindMapPanelProps) {
     }
     if (status === "empty") {
       return (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-4">
-          <p className="text-xs text-muted-foreground text-center">No MindMap for this scope yet.</p>
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6">
+          <span
+            className="material-symbols-outlined text-3xl text-muted-foreground/50"
+            style={{ fontVariationSettings: "'FILL' 0, 'wght' 300" }}
+          >
+            account_tree
+          </span>
+          <p className="text-sm font-medium text-foreground">No MindMap yet</p>
+          <p className="text-xs text-muted-foreground text-center">
+            Generate a knowledge map from wiki pages in this scope.
+          </p>
           <button
             type="button"
             onClick={handleGenerate}
@@ -295,13 +336,28 @@ export function MindMapPanel({ onNodeClick }: MindMapPanelProps) {
       );
     }
     if (status === "error") {
+      const isNoPages = errorMsg?.toLowerCase().includes("no wiki pages");
       return (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-4">
-          <p className="text-xs text-destructive text-center">{errorMsg}</p>
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6">
+          <span
+            className="material-symbols-outlined text-2xl text-destructive/70"
+            style={{ fontVariationSettings: "'FILL' 0, 'wght' 300" }}
+          >
+            {isNoPages ? "description" : "error"}
+          </span>
+          <p className="text-xs text-destructive text-center font-medium">
+            {isNoPages ? "No wiki pages in this scope" : errorMsg}
+          </p>
+          <p className="text-[11px] text-muted-foreground text-center">
+            {isNoPages
+              ? "Add wiki pages to this scope first, then generate the mindmap."
+              : "Something went wrong. Please try again."}
+          </p>
           <button
             type="button"
-            onClick={() => loadMindmap(selectedScope)}
-            className="px-3 py-1.5 bg-muted text-foreground rounded-md text-xs hover:bg-muted/80 transition-colors"
+            onClick={isNoPages ? undefined : () => loadMindmap(selectedScope)}
+            disabled={isNoPages}
+            className="px-3 py-1.5 bg-muted text-foreground rounded-md text-xs hover:bg-muted/80 transition-colors disabled:opacity-50"
           >
             Retry
           </button>
@@ -311,15 +367,29 @@ export function MindMapPanel({ onNodeClick }: MindMapPanelProps) {
     // ready
     return (
       <div className="flex-1 min-h-0 overflow-hidden">
-        {mindmap && <MindMapTree tree={mindmap.tree_json} onNodeClick={handleNodeClick} />}
+        {mindmap && (
+          <MindMapTree
+            tree={mindmap.tree_json}
+            onNodeClick={handleNodeClick}
+            metadata={{ pageCount: mindmap.wiki_page_count, generatedAt: mindmap.generated_at }}
+          />
+        )}
       </div>
     );
   };
 
   const cacheFooter =
     mindmap && status === "ready" ? (
-      <div className="px-3 py-1.5 border-t border-border text-[10px] text-muted-foreground shrink-0">
-        {mindmap.wiki_page_count} pages · generated {formatAge(mindmap.generated_at)}
+      <div className="px-3 py-1.5 border-t border-border flex items-center justify-between text-[10px] text-muted-foreground shrink-0">
+        <span>{mindmap.wiki_page_count} pages · generated {formatAge(mindmap.generated_at)}</span>
+        <button
+          type="button"
+          onClick={handleRegenerate}
+          disabled={isGenerating}
+          className="text-[10px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline transition-colors disabled:opacity-40"
+        >
+          Regenerate
+        </button>
       </div>
     ) : null;
 
@@ -365,7 +435,7 @@ export function MindMapPanel({ onNodeClick }: MindMapPanelProps) {
 
   // open
   return (
-    <div className="w-[340px] flex-shrink-0 flex flex-col border-l border-border bg-background">
+    <div className="w-[380px] flex-shrink-0 flex flex-col border-l border-border bg-background">
       {header(false)}
       {body()}
       {cacheFooter}
