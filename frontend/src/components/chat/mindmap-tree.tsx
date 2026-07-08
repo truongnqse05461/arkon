@@ -4,7 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { CustomNodeElementProps } from "react-d3-tree";
 import { MindmapNodePopover } from "./mindmap-node-popover";
-import { wikiTypeColor } from "@/components/wiki/wiki-type-badge";
+import {
+  EDGE_COLOR,
+  getNodeStyle,
+  getNodeWidth,
+  getTypeIcon,
+  mindmapPathFunc,
+} from "./mindmap-tree-layout";
 
 // react-d3-tree uses browser APIs — no SSR
 const Tree = dynamic(() => import("react-d3-tree"), { ssr: false });
@@ -25,34 +31,8 @@ type MindMapTreeProps = {
   metadata?: { pageCount: number; generatedAt: string };
 };
 
-const ROOT_COLOR = "#c2b8e8";
-const ROOT_TEXT = "#3a2a6a";
-const DEFAULT_BASE = "#9ca3af";
-const EDGE_COLOR = "#b0a8d0";
-
-function getNodeStyle(nodeDatum: TreeNode, isRoot: boolean) {
-  if (isRoot) return { bg: ROOT_COLOR, border: ROOT_COLOR, text: ROOT_TEXT };
-  const type = nodeDatum.page_type;
-  const base = type ? wikiTypeColor(type) : DEFAULT_BASE;
-  if (nodeDatum.page_slug) {
-    return { bg: `${base}1a`, border: `${base}40`, text: base };
-  }
-  // Unmatched nodes — slightly desaturated
-  return { bg: `${DEFAULT_BASE}1a`, border: `${DEFAULT_BASE}40`, text: DEFAULT_BASE };
-}
-
-function getTypeIcon(pageType?: string): string | null {
-  const icons: Record<string, string> = {
-    entity: "person",
-    concept: "lightbulb",
-    topic: "topic",
-    source: "description",
-  };
-  return icons[pageType ?? ""] ?? null;
-}
-
 function makeRenderNode(
-  onNodeClick?: (node: TreeNode) => void,
+  onNodeClick?: (node: TreeNode, anchorRect: DOMRect) => void,
   activeNodeKey?: string | null,
 ) {
   return function renderNode({ nodeDatum, toggleNode }: CustomNodeElementProps) {
@@ -65,23 +45,17 @@ function makeRenderNode(
     const style = getNodeStyle(node, isRoot);
     const typeIcon = getTypeIcon(node.page_slug ? node.page_type : undefined);
     const isActive = activeNodeKey === label;
-    const charWidth = isRoot ? 9 : 8;
-    const iconSpace = typeIcon ? 18 : 0;
-    const maxWidth = 260; // cap to prevent parent overlap with children
-    const nodeWidth = Math.min(maxWidth, Math.max(100, label.length * charWidth + (hasChildren ? 40 : 20) + iconSpace + 10));
-
+    const nodeWidth = getNodeWidth(node, isRoot);
     const fh = isRoot ? 44 : 34;
     const fy = isRoot ? -20 : -16;
-    const pad = 4; // extra background padding to cover edge overshoot
 
     return (
       <>
-        {/* SVG rect background — renders at SVG level, behind foreignObject */}
         <rect
-          x={-pad}
-          y={fy - pad}
-          width={nodeWidth + pad * 2}
-          height={fh + pad * 2}
+          x={0}
+          y={fy}
+          width={nodeWidth}
+          height={fh}
           rx={8}
           ry={8}
           fill={style.bg}
@@ -96,9 +70,8 @@ function makeRenderNode(
             className="mindmap-node"
             data-node-label={label}
             onContextMenu={(e) => {
-              // Right-click = popover
               e.preventDefault();
-              onNodeClick?.(node);
+              onNodeClick?.(node, e.currentTarget.getBoundingClientRect());
             }}
             style={{
               display: "flex",
@@ -115,12 +88,11 @@ function makeRenderNode(
               boxSizing: "border-box",
               transition: "border-color 0.15s, box-shadow 0.15s",
             }}
-            onClick={() => {
-              // Left-click = expand/collapse (if has children), otherwise popover
+            onClick={(e) => {
               if (hasChildren) {
                 toggleNode();
               } else {
-                onNodeClick?.(node);
+                onNodeClick?.(node, e.currentTarget.getBoundingClientRect());
               }
             }}
           >
@@ -191,19 +163,9 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
     }
   }, [zoom]);
 
-  const handleNodeClick = useCallback((node: TreeNode) => {
-    // Find the SVG foreignObject element for this node
-    const el = containerRef.current?.querySelector(
-      `[data-node-label="${CSS.escape(node.name)}"]`,
-    );
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      setPopoverState({ node, rect });
-    } else {
-      // Fallback: pass to parent
-      onNodeClick?.(node);
-    }
-  }, [onNodeClick]);
+  const handleNodeClick = useCallback((node: TreeNode, rect: DOMRect) => {
+    setPopoverState({ node, rect });
+  }, []);
 
   const handleOpenPage = useCallback((slug: string) => {
     setPopoverState(null);
@@ -268,7 +230,7 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
         <Tree
           data={tree}
           orientation="horizontal"
-          pathFunc="diagonal"
+          pathFunc={mindmapPathFunc}
           translate={translate}
           zoom={zoom}
           onUpdate={handleUpdate}
