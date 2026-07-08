@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { wikiTypeIcon, wikiTypeColor } from "@/components/wiki/wiki-type-badge";
 import type { TreeNode } from "./mindmap-tree";
@@ -19,7 +20,7 @@ type PopoverProps = {
   onClose: () => void;
 };
 
-const POPOVER_WIDTH = 260;
+const POPOVER_MAX_WIDTH = 280;
 const POPOVER_PADDING = 12;
 
 export function MindmapNodePopover({
@@ -29,6 +30,18 @@ export function MindmapNodePopover({
   onAskChat,
   onClose,
 }: PopoverProps) {
+  // Global Escape key handler (works even when focus is inside the popover)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  // SSR guard – window is undefined during server-side rendering
+  if (typeof window === "undefined") return null;
+
   const hasPage = Boolean(node.page_slug);
   const typeIcon = hasPage ? wikiTypeIcon(node.page_type ?? "") : "radio_button_unchecked";
   const typeColor = hasPage ? wikiTypeColor(node.page_type ?? "") : "#9ca3af";
@@ -36,9 +49,9 @@ export function MindmapNodePopover({
 
   // Position: prefer right of node, flip left if not enough space
   const spaceRight = window.innerWidth - anchorRect.right;
-  const flipLeft = spaceRight < POPOVER_WIDTH + POPOVER_PADDING * 2;
+  const flipLeft = spaceRight < POPOVER_MAX_WIDTH + POPOVER_PADDING * 2;
   const left = flipLeft
-    ? anchorRect.left - POPOVER_WIDTH - 8
+    ? anchorRect.left - POPOVER_MAX_WIDTH - 8
     : anchorRect.right + 8;
   const top = Math.max(
     POPOVER_PADDING,
@@ -54,12 +67,11 @@ export function MindmapNodePopover({
       <div
         className="fixed inset-0 z-40"
         onClick={onClose}
-        onKeyDown={(e) => e.key === "Escape" && onClose()}
         tabIndex={-1}
       />
       {/* Popover */}
       <div
-        className="fixed z-50 w-[260px] rounded-lg border border-border bg-popover text-popover-foreground shadow-lg overflow-hidden"
+        className="fixed z-50 min-w-[200px] max-w-[280px] rounded-lg border border-border bg-popover text-popover-foreground shadow-lg overflow-hidden animate-in fade-in-0 zoom-in-95"
         style={{ left, top }}
         role="dialog"
         aria-label={`Node: ${node.name}`}
