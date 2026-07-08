@@ -1395,6 +1395,18 @@ class WikiMindmap(Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False, default="Knowledge Base")
     tree_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
     wiki_page_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="wiki",
+        comment="'wiki' or 'source_docs'",
+    )
+    source_ids: Mapped[Optional[list]] = mapped_column(
+        JSONB, nullable=True,
+        comment="UUIDs of source documents. NULL for wiki mode.",
+    )
+    instruction: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+        comment="User instruction appended to system prompt.",
+    )
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
