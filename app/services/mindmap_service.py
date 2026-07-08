@@ -117,13 +117,17 @@ def _normalize_name(name: str) -> str:
 
 
 def _build_page_lookup(pages: list[WikiPage]) -> dict[str, list[dict]]:
-    """Build normalized_title -> list of page metadata dicts."""
+    """Build normalized_title -> list of page metadata dicts.
+
+    Indexes both translated and original titles so the LLM's English node
+    names can match even when pages have translated display titles.
+    """
     lookup: dict[str, list[dict]] = {}
     for page in pages:
-        title = _page_display_title(page)
-        if not title:
+        display_title = _page_display_title(page)
+        original_title = _first_text(getattr(page, "title", ""))
+        if not display_title and not original_title:
             continue
-        key = _normalize_name(title)
         summary_raw = _first_text(
             getattr(page, "summary_translated", None),
             getattr(page, "summary", None),
@@ -133,7 +137,16 @@ def _build_page_lookup(pages: list[WikiPage]) -> dict[str, list[dict]]:
             "page_type": getattr(page, "page_type", "concept"),
             "summary": summary_raw[:_SUMMARY_MAX_LEN] if summary_raw else "",
         }
-        lookup.setdefault(key, []).append(entry)
+        # Index by translated title (primary)
+        if display_title:
+            key = _normalize_name(display_title)
+            if key:
+                lookup.setdefault(key, []).append(entry)
+        # Also index by original title (for LLM English node name matching)
+        if original_title:
+            orig_key = _normalize_name(original_title)
+            if orig_key and orig_key not in lookup:
+                lookup.setdefault(orig_key, []).append(entry)
     return lookup
 
 

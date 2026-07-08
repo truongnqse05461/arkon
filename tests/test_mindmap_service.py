@@ -469,3 +469,23 @@ def test_enrich_tree_fuzzy_match_via_sequence_matcher():
     child = result["children"][0]
     # "authentication system" vs "authentication service" — not substrings, but SequenceMatcher ratio ~0.79
     assert child["page_slug"] == "auth-svc"
+
+
+def test_enrich_tree_matches_original_title_when_translated():
+    """LLM generates English node names; pages have translated titles. Match via original title."""
+    from app.services.mindmap_service import _enrich_tree_nodes
+    pages = [
+        make_page(
+            "Highly Scalable Architecture",
+            slug="concept/hsa",
+            summary="Scalable patterns",
+            content="x" * 60,
+            title_translated="Kiến trúc có khả năng mở rộng cao",
+        ),
+    ]
+    tree = {"name": "KB", "children": [{"name": "Highly Scalable Architecture", "children": []}]}
+    result = _enrich_tree_nodes(tree, pages)
+    child = result["children"][0]
+    assert child["page_slug"] == "concept/hsa"
+    assert child["page_type"] == "concept"
+    assert child["summary"] == "Scalable patterns"
