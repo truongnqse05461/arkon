@@ -70,45 +70,60 @@ function makeRenderNode(
     const maxWidth = 260; // cap to prevent parent overlap with children
     const nodeWidth = Math.min(maxWidth, Math.max(100, label.length * charWidth + (hasChildren ? 40 : 20) + iconSpace + 10));
 
+    const fh = isRoot ? 44 : 34;
+    const fy = isRoot ? -20 : -16;
+    const pad = 4; // extra background padding to cover edge overshoot
+
     return (
-      <foreignObject x={0} y={isRoot ? -20 : -16} width={nodeWidth} height={isRoot ? 44 : 34}>
-        <div
-          // @ts-expect-error xmlns needed for SVG foreignObject
-          xmlns="http://www.w3.org/1999/xhtml"
-          className="mindmap-node"
-          data-node-label={label}
-          onContextMenu={(e) => {
-            // Right-click = popover
-            e.preventDefault();
-            onNodeClick?.(node);
-          }}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            background: style.bg,
-            border: `${isCollapsed ? "1.5px dashed" : "1.5px solid"} ${isActive ? "#6366f1" : style.border ?? "#ccc"}`,
-            borderRadius: 6,
-            padding: isRoot ? "6px 12px" : "4px 10px",
-            fontSize: isRoot ? 13 : 12,
-            fontWeight: isRoot ? 700 : 400,
-            cursor: "pointer",
-            userSelect: "none",
-            whiteSpace: "nowrap",
-            height: isRoot ? 38 : 30,
-            boxSizing: "border-box",
-            boxShadow: isActive ? "0 0 0 2px rgba(99,102,241,0.3)" : undefined,
-            transition: "border-color 0.15s, box-shadow 0.15s",
-          }}
-          onClick={() => {
-            // Left-click = expand/collapse (if has children), otherwise popover
-            if (hasChildren) {
-              toggleNode();
-            } else {
+      <>
+        {/* SVG rect background — renders at SVG level, behind foreignObject */}
+        <rect
+          x={-pad}
+          y={fy - pad}
+          width={nodeWidth + pad * 2}
+          height={fh + pad * 2}
+          rx={8}
+          ry={8}
+          fill={style.bg}
+          stroke={isActive ? "#6366f1" : style.border ?? "#ccc"}
+          strokeWidth={isCollapsed ? 1.5 : 1.5}
+          strokeDasharray={isCollapsed ? "4 2" : undefined}
+        />
+        <foreignObject x={0} y={fy} width={nodeWidth} height={fh}>
+          <div
+            // @ts-expect-error xmlns needed for SVG foreignObject
+            xmlns="http://www.w3.org/1999/xhtml"
+            className="mindmap-node"
+            data-node-label={label}
+            onContextMenu={(e) => {
+              // Right-click = popover
+              e.preventDefault();
               onNodeClick?.(node);
-            }
-          }}
-        >
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              background: "transparent",
+              padding: isRoot ? "6px 12px" : "4px 10px",
+              fontSize: isRoot ? 13 : 12,
+              fontWeight: isRoot ? 700 : 400,
+              cursor: "pointer",
+              userSelect: "none",
+              whiteSpace: "nowrap",
+              height: isRoot ? 38 : 30,
+              boxSizing: "border-box",
+              transition: "border-color 0.15s, box-shadow 0.15s",
+            }}
+            onClick={() => {
+              // Left-click = expand/collapse (if has children), otherwise popover
+              if (hasChildren) {
+                toggleNode();
+              } else {
+                onNodeClick?.(node);
+              }
+            }}
+          >
           {typeIcon && (
             <span
               className="material-symbols-outlined"
@@ -139,6 +154,7 @@ function makeRenderNode(
           )}
         </div>
       </foreignObject>
+      </>
     );
   };
 }
@@ -236,45 +252,6 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
     return () => cancelAnimationFrame(timer);
   }, [ready, handleFitToView, tree]);
 
-  // Fix SVG rendering order: move edges (path) before nodes (g > foreignObject)
-  // SVG doesn't support z-index; later elements render on top.
-  // This must be recursive because react-d3-tree nests <g> groups at every level.
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    function reorderEdgesBehindNodes(group: SVGGElement) {
-      // Reorder children of this group: paths first, then groups
-      const children = Array.from(group.children);
-      const paths: Element[] = [];
-      const others: Element[] = [];
-      for (const child of children) {
-        if (child.tagName === "path") paths.push(child);
-        else others.push(child);
-      }
-      // If any path comes after any non-path, reorder
-      const needsReorder = paths.some((p) => {
-        const pIdx = children.indexOf(p);
-        return others.some((o) => children.indexOf(o) < pIdx);
-      });
-      if (needsReorder) {
-        for (const p of paths) group.insertBefore(p, group.firstChild);
-      }
-      // Recurse into child groups
-      for (const child of others) {
-        if (child.tagName === "g") reorderEdgesBehindNodes(child as SVGGElement);
-      }
-    }
-
-    const observer = new MutationObserver(() => {
-      const svg = containerRef.current?.querySelector("svg");
-      if (!svg) return;
-      const rootG = svg.querySelector("g");
-      if (!rootG) return;
-      reorderEdgesBehindNodes(rootG);
-    });
-    observer.observe(containerRef.current, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [ready]);
 
   const handleReset = useCallback(() => {
     if (containerRef.current) {
@@ -361,10 +338,9 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
         />
       )}
 
-      {/* Edge colour + node hover + edge-behind-node fix */}
+      {/* Edge colour + smooth zoom */}
       <style>{`
         .mindmap-edge { stroke: ${EDGE_COLOR}; stroke-width: 1.5px; fill: none; }
-        .mindmap-node:hover { filter: brightness(1.08); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
         .rd3t-g { transition: transform 200ms ease-out; }
       `}</style>
     </div>
