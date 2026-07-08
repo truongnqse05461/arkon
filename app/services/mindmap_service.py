@@ -17,6 +17,9 @@ EXCERPT_CHARS = 600
 MIN_MEANINGFUL_CHARS = 40
 INTERNAL_PAGE_SLUGS = {"_index", "_log"}
 
+_SUMMARY_BATCH_SIZE = 15
+_SUMMARY_MAX_CHARS = 150
+
 _SYSTEM = "You are a knowledge architect. Return ONLY valid JSON - no markdown, no explanation."
 
 _PROMPT_TEMPLATE = """\
@@ -266,6 +269,88 @@ def _enrich_tree_nodes_from_sources(tree: dict, sources: list) -> dict:
     return enrich_node(tree)
 
 
+_SUMMARY_PROMPT = """\
+Given the following node names from a knowledge map, generate a concise
+1-2 sentence summary for each node. The summary should explain what this
+concept/topic means in the context of the knowledge base.
+
+Node names:
+{node_names}
+
+Return JSON array:
+[
+  {{"name": "Node Name", "summary": "Brief explanation of the concept."}},
+  ...
+]
+
+Rules:
+- Summary must be max 150 characters
+- Use plain language, no jargon
+- If the node name is unclear, make a reasonable assumption based on context
+"""
+
+
+def _collect_unmatched_nodes(tree: dict) -> list[str]:
+    """Collect node names that have no page_slug and no summary."""
+    unmatched = []
+
+    def walk(node: dict):
+        if not node.get("page_slug") and not node.get("summary"):
+            name = node.get("name", "")
+            if name:
+                unmatched.append(name)
+        for child in node.get("children", []):
+            walk(child)
+
+    walk(tree)
+    return unmatched
+
+
+def _apply_summaries(tree: dict, summaries: dict[str, str]) -> dict:
+    """Apply generated summaries to tree nodes."""
+
+    def walk(node: dict):
+        name = node.get("name", "")
+        if name in summaries and not node.get("summary"):
+            node["summary"] = summaries[name][:_SUMMARY_MAX_CHARS]
+        for child in node.get("children", []):
+            walk(child)
+
+    walk(tree)
+    return tree
+
+
+async def _generate_node_summaries(
+    nodes: list[str],
+    llm,
+) -> dict[str, str]:
+    """Generate summaries for unmatched nodes in batches."""
+    summaries: dict[str, str] = {}
+
+    for i in range(0, len(nodes), _SUMMARY_BATCH_SIZE):
+        batch = nodes[i : i + _SUMMARY_BATCH_SIZE]
+        prompt = _SUMMARY_PROMPT.format(node_names="\n".join(batch))
+
+        try:
+            result = await llm.generate(prompt, temperature=0.3, max_tokens=1024)
+            cleaned = (
+                result.strip()
+                .removeprefix("```json")
+                .removeprefix("```")
+                .removesuffix("```")
+                .strip()
+            )
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, list):
+                for item in parsed:
+                    if isinstance(item, dict) and "name" in item and "summary" in item:
+                        summaries[item["name"]] = item["summary"]
+        except Exception:
+            pass  # Skip summaries for this batch
+
+    return summaries
+
+
 async def list_mindmaps(db: AsyncSession) -> list[WikiMindmap]:
     """List all mindmaps ordered by most recent first."""
     stmt = select(WikiMindmap).order_by(WikiMindmap.generated_at.desc())
@@ -349,6 +434,12 @@ async def generate_mindmap(
         tree = _enrich_tree_nodes_from_sources(tree, sources)
     else:
         tree = _enrich_tree_nodes(tree, pages)
+
+    # Generate LLM summaries for unmatched nodes
+    unmatched = _collect_unmatched_nodes(tree)
+    if unmatched:
+        summaries = await _generate_node_summaries(unmatched, llm)
+        tree = _apply_summaries(tree, summaries)
 
     title = str(tree.get("name", "Knowledge Base"))
 

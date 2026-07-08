@@ -196,7 +196,7 @@ async def test_generate_mindmap_calls_llm_and_upserts():
             result = await generate_mindmap(db, "global", None)
             db.add.assert_called_once()
             db.flush.assert_called()
-            prompt = mock_llm.generate.call_args.args[0]
+            prompt = mock_llm.generate.call_args_list[0].args[0]
             assert "learner-facing concept map" in prompt
             assert "Wiki knowledge pages" in prompt
 
@@ -259,7 +259,7 @@ async def test_generate_mindmap_uses_only_filtered_pages_and_count():
             result = await generate_mindmap(db, "global", None)
 
     assert result.wiki_page_count == 1
-    prompt = mock_llm.generate.call_args.args[0]
+    prompt = mock_llm.generate.call_args_list[0].args[0]
     assert "Architecture" in prompt
     payload = prompt.split("Wiki knowledge pages:", 1)[1]
     assert "Wiki Index" not in payload
@@ -541,3 +541,50 @@ def test_enrich_tree_nodes_from_sources():
     child = result["children"][0]
     assert child["page_slug"].startswith("source:")
     assert child["page_type"] == "document"
+
+
+# --- LLM summary generation tests ---
+
+
+def test_collect_unmatched_nodes():
+    from app.services.mindmap_service import _collect_unmatched_nodes
+    tree = {
+        "name": "KB",
+        "children": [
+            {"name": "Auth", "page_slug": "auth", "children": []},
+            {"name": "Unmatched Topic", "children": []},
+            {"name": "Another", "summary": "has summary", "children": []},
+        ],
+    }
+    result = _collect_unmatched_nodes(tree)
+    assert "Unmatched Topic" in result
+    assert "Auth" not in result
+    assert "Another" not in result
+
+
+def test_apply_summaries():
+    from app.services.mindmap_service import _apply_summaries
+    tree = {
+        "name": "KB",
+        "children": [
+            {"name": "Auth", "children": []},
+            {"name": "Topic B", "children": []},
+        ],
+    }
+    summaries = {"Topic B": "This is about topic B"}
+    result = _apply_summaries(tree, summaries)
+    assert result["children"][1]["summary"] == "This is about topic B"
+    assert "summary" not in result["children"][0]
+
+
+@pytest.mark.asyncio
+async def test_generate_node_summaries_batches():
+    from app.services.mindmap_service import _generate_node_summaries
+    nodes = [f"Node {i}" for i in range(20)]
+    mock_llm = AsyncMock()
+    mock_llm.generate = AsyncMock(return_value=json.dumps([
+        {"name": f"Node {i}", "summary": f"Summary {i}"} for i in range(15)
+    ]))
+    result = await _generate_node_summaries(nodes[:15], mock_llm)
+    assert len(result) == 15
+    assert result["Node 0"] == "Summary 0"
