@@ -67,15 +67,20 @@ function makeRenderNode(
     const isActive = activeNodeKey === label;
     const charWidth = isRoot ? 9 : 8;
     const iconSpace = typeIcon ? 18 : 0;
-    const nodeWidth = Math.max(90, label.length * charWidth + (hasChildren ? 32 : 20) + iconSpace + 8);
+    const nodeWidth = Math.max(100, label.length * charWidth + (hasChildren ? 40 : 20) + iconSpace + 10);
 
     return (
-      <foreignObject x={0} y={isRoot ? -18 : -14} width={nodeWidth} height={isRoot ? 40 : 30}>
+      <foreignObject x={0} y={isRoot ? -20 : -16} width={nodeWidth} height={isRoot ? 44 : 34}>
         <div
           // @ts-expect-error xmlns needed for SVG foreignObject
           xmlns="http://www.w3.org/1999/xhtml"
           className="mindmap-node"
           data-node-label={label}
+          onContextMenu={(e) => {
+            // Right-click = popover
+            e.preventDefault();
+            onNodeClick?.(node);
+          }}
           style={{
             display: "flex",
             alignItems: "center",
@@ -83,18 +88,25 @@ function makeRenderNode(
             background: style.bg,
             border: `${isCollapsed ? "1.5px dashed" : "1.5px solid"} ${isActive ? "#6366f1" : style.border ?? "#ccc"}`,
             borderRadius: 6,
-            padding: isRoot ? "5px 10px" : "3px 8px",
+            padding: isRoot ? "6px 12px" : "4px 10px",
             fontSize: isRoot ? 13 : 12,
             fontWeight: isRoot ? 700 : 400,
             cursor: "pointer",
             userSelect: "none",
             whiteSpace: "nowrap",
-            height: isRoot ? 36 : 28,
+            height: isRoot ? 38 : 30,
             boxSizing: "border-box",
             boxShadow: isActive ? "0 0 0 2px rgba(99,102,241,0.3)" : undefined,
             transition: "border-color 0.15s, box-shadow 0.15s",
           }}
-          onClick={() => onNodeClick?.(node)}
+          onClick={() => {
+            // Left-click = expand/collapse (if has children), otherwise popover
+            if (hasChildren) {
+              toggleNode();
+            } else {
+              onNodeClick?.(node);
+            }
+          }}
         >
           {typeIcon && (
             <span
@@ -110,17 +122,18 @@ function makeRenderNode(
           {hasChildren && (
             <span
               style={{
-                color: "#5a4a8a",
-                fontSize: 11,
-                background: "#e8e0f0",
-                borderRadius: 3,
-                padding: "1px 4px",
+                color: isCollapsed ? "#5a4a8a" : "#8a7aaa",
+                fontSize: 12,
+                background: isCollapsed ? "#e8e0f0" : "#f0ecf5",
+                borderRadius: 4,
+                padding: "2px 6px",
                 lineHeight: 1,
                 flexShrink: 0,
+                fontWeight: 600,
               }}
-              onClick={(e) => { e.stopPropagation(); toggleNode(); }}
+              title={isCollapsed ? "Expand (left-click) · Info (right-click)" : "Collapse (left-click) · Info (right-click)"}
             >
-              {isCollapsed ? "›" : "‹"}
+              {isCollapsed ? "▸" : "▾"}
             </span>
           )}
         </div>
@@ -242,8 +255,8 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
           zoom={zoom}
           onUpdate={handleUpdate}
           renderCustomNodeElement={renderNode}
-          separation={{ siblings: 1.3, nonSiblings: 1.8 }}
-          nodeSize={{ x: 240, y: 52 }}
+          separation={{ siblings: 1.6, nonSiblings: 2.0 }}
+          nodeSize={{ x: 280, y: 60 }}
           collapsible
           initialDepth={1}
           pathClassFunc={() => "mindmap-edge"}
@@ -307,11 +320,13 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
         />
       )}
 
-      {/* Edge colour override */}
+      {/* Edge colour override + node hover */}
       <style>{`
         .mindmap-edge { stroke: ${EDGE_COLOR}; stroke-width: 1.5px; fill: none; }
+        .mindmap-node { position: relative; z-index: 2; }
         .mindmap-node:hover { filter: brightness(1.08); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
         .rd3t-g { transition: transform 200ms ease-out; }
+        .rd3t-link { z-index: 1; }
       `}</style>
     </div>
   );
