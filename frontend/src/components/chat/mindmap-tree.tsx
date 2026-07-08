@@ -67,7 +67,8 @@ function makeRenderNode(
     const isActive = activeNodeKey === label;
     const charWidth = isRoot ? 9 : 8;
     const iconSpace = typeIcon ? 18 : 0;
-    const nodeWidth = Math.max(100, label.length * charWidth + (hasChildren ? 40 : 20) + iconSpace + 10);
+    const maxWidth = 260; // cap to prevent parent overlap with children
+    const nodeWidth = Math.min(maxWidth, Math.max(100, label.length * charWidth + (hasChildren ? 40 : 20) + iconSpace + 10));
 
     return (
       <foreignObject x={0} y={isRoot ? -20 : -16} width={nodeWidth} height={isRoot ? 44 : 34}>
@@ -235,6 +236,36 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
     return () => cancelAnimationFrame(timer);
   }, [ready, handleFitToView, tree]);
 
+  // Fix SVG rendering order: move edges (path) before nodes (g > foreignObject)
+  // SVG doesn't support z-index; later elements render on top.
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new MutationObserver(() => {
+      const svg = containerRef.current?.querySelector("svg");
+      if (!svg) return;
+      const rootG = svg.querySelector("g");
+      if (!rootG) return;
+      // Collect path and g children
+      const paths: Element[] = [];
+      const groups: Element[] = [];
+      for (const child of Array.from(rootG.children)) {
+        if (child.tagName === "path") paths.push(child);
+        else if (child.tagName === "g") groups.push(child);
+      }
+      // Only reorder if paths come after groups (edges on top of nodes)
+      if (paths.length > 0 && groups.length > 0) {
+        const lastPathIdx = Array.from(rootG.children).indexOf(paths[paths.length - 1]);
+        const firstGroupIdx = Array.from(rootG.children).indexOf(groups[0]);
+        if (lastPathIdx > firstGroupIdx) {
+          // Move all paths to the front
+          for (const p of paths) rootG.insertBefore(p, rootG.firstChild);
+        }
+      }
+    });
+    observer.observe(containerRef.current, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [ready]);
+
   const handleReset = useCallback(() => {
     if (containerRef.current) {
       const { height } = containerRef.current.getBoundingClientRect();
@@ -255,8 +286,8 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
           zoom={zoom}
           onUpdate={handleUpdate}
           renderCustomNodeElement={renderNode}
-          separation={{ siblings: 1.6, nonSiblings: 2.0 }}
-          nodeSize={{ x: 280, y: 60 }}
+          separation={{ siblings: 1.8, nonSiblings: 2.2 }}
+          nodeSize={{ x: 320, y: 60 }}
           collapsible
           initialDepth={1}
           pathClassFunc={() => "mindmap-edge"}
@@ -320,13 +351,11 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
         />
       )}
 
-      {/* Edge colour override + node hover */}
+      {/* Edge colour + node hover + edge-behind-node fix */}
       <style>{`
         .mindmap-edge { stroke: ${EDGE_COLOR}; stroke-width: 1.5px; fill: none; }
-        .mindmap-node { position: relative; z-index: 2; }
         .mindmap-node:hover { filter: brightness(1.08); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
         .rd3t-g { transition: transform 200ms ease-out; }
-        .rd3t-link { z-index: 1; }
       `}</style>
     </div>
   );
