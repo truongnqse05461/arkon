@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { MindmapList } from "@/components/mindmap/mindmap-list";
+import { GenerationDialog } from "@/components/mindmap/generation-dialog";
 import { api } from "@/lib/api";
 
 type MindmapSummary = {
@@ -20,6 +21,7 @@ type MindmapSummary = {
 export default function MindmapPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState<MindmapSummary | null>(null);
+  const [generationOpen, setGenerationOpen] = useState(false);
 
   const handleView = useCallback((mm: MindmapSummary) => {
     // For now, open in fullscreen viewer (will be implemented in Task 8)
@@ -57,7 +59,7 @@ export default function MindmapPage() {
         title="Mindmaps"
         description="Generate and manage knowledge maps from your wiki or source documents."
         action={
-          <Button onClick={() => window.location.href = "/mindmap?generate=1"} className="gap-2">
+          <Button onClick={() => setGenerationOpen(true)} className="gap-2">
             <span className="material-symbols-outlined text-base">add</span>
             Generate
           </Button>
@@ -78,7 +80,7 @@ export default function MindmapPage() {
             title="No mindmaps yet"
             description="Generate a knowledge map from Wiki pages or source documents."
             action={
-              <Button onClick={() => window.location.href = "/mindmap?generate=1"} className="gap-2 mt-2">
+              <Button onClick={() => setGenerationOpen(true)} className="gap-2 mt-2">
                 <span className="material-symbols-outlined text-base">add</span>
                 Generate Mindmap
               </Button>
@@ -86,6 +88,8 @@ export default function MindmapPage() {
           />
         )}
       </div>
+
+      <GenerationDialog open={generationOpen} onOpenChange={setGenerationOpen} onGenerated={() => setRefreshKey((k) => k + 1)} />
 
       {/* Delete confirmation dialog */}
       {confirmDelete && (
