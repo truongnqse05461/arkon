@@ -212,7 +212,7 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
     if (!ready) return;
     const timer = requestAnimationFrame(() => handleFitToView());
     return () => cancelAnimationFrame(timer);
-  }, [ready, handleFitToView]);
+  }, [ready, handleFitToView, tree]);
 
   const handleReset = useCallback(() => {
     if (containerRef.current) {
@@ -246,7 +246,7 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
 
       {/* Root metadata below tree */}
       {metadata && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground bg-background/80 px-2 py-0.5 rounded border border-border/50">
+        <div className="absolute bottom-3 left-3 text-[10px] text-muted-foreground bg-background/80 px-2 py-0.5 rounded border border-border/50">
           {metadata.pageCount} pages · {formatAge(metadata.generatedAt)}
         </div>
       )}

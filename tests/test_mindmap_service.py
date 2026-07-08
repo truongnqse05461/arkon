@@ -435,6 +435,30 @@ def test_enrich_tree_empty_children():
     assert result == {"name": "KB", "children": []}
 
 
+def test_enrich_tree_substring_match():
+    """Substring match when one name contains the other and length ratio >= 50%."""
+    from app.services.mindmap_service import _enrich_tree_nodes
+    pages = [
+        make_page("Authentication Methods", slug="auth-methods", summary="Auth methods guide", content="x" * 60),
+    ]
+    tree = {"name": "KB", "children": [{"name": "Authentication", "children": []}]}
+    result = _enrich_tree_nodes(tree, pages)
+    # "authentication" is a substring of "authentication methods", length ratio 14/24 = 0.58 >= 0.5
+    assert result["children"][0]["page_slug"] == "auth-methods"
+
+
+def test_enrich_tree_substring_rejected_when_too_short():
+    """Short node name rejected by 50% length ratio guard."""
+    from app.services.mindmap_service import _enrich_tree_nodes
+    pages = [
+        make_page("REST API Design Guide", slug="api-design", summary="API design patterns", content="x" * 60),
+    ]
+    tree = {"name": "KB", "children": [{"name": "API", "children": []}]}
+    result = _enrich_tree_nodes(tree, pages)
+    # "api" length 3 vs "rest api design guide" length 20, ratio 3/20 = 0.15 < 0.5
+    assert "page_slug" not in result["children"][0]
+
+
 def test_enrich_tree_fuzzy_match_via_sequence_matcher():
     from app.services.mindmap_service import _enrich_tree_nodes
     pages = [

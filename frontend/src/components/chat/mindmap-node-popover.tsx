@@ -5,15 +5,8 @@ import { createPortal } from "react-dom";
 import { wikiTypeIcon, wikiTypeColor } from "@/components/wiki/wiki-type-badge";
 import type { TreeNode } from "./mindmap-tree";
 
-/** TreeNode enriched with optional wiki-page metadata. */
-export type EnrichedTreeNode = TreeNode & {
-  page_slug?: string;
-  page_type?: string;
-  summary?: string;
-};
-
 type PopoverProps = {
-  node: EnrichedTreeNode;
+  node: TreeNode;
   anchorRect: DOMRect;
   onOpenPage: (slug: string) => void;
   onAskChat: (name: string) => void;
@@ -51,7 +44,7 @@ export function MindmapNodePopover({
   const spaceRight = window.innerWidth - anchorRect.right;
   const flipLeft = spaceRight < POPOVER_MAX_WIDTH + POPOVER_PADDING * 2;
   const left = flipLeft
-    ? anchorRect.left - POPOVER_MAX_WIDTH - 8
+    ? Math.max(POPOVER_PADDING, anchorRect.left - POPOVER_MAX_WIDTH - 8)
     : anchorRect.right + 8;
   const top = Math.max(
     POPOVER_PADDING,
