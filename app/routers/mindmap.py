@@ -28,9 +28,30 @@ class MindmapResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class MindmapSummaryResponse(BaseModel):
+    id: uuid.UUID
+    scope_type: str
+    scope_id: Optional[uuid.UUID]
+    title: str
+    source_type: str
+    wiki_page_count: int
+    generated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class GenerateRequest(BaseModel):
     scope_type: Literal["global", "department", "project"]
     scope_id: Optional[uuid.UUID] = None
+
+
+@router.get("/mindmaps", response_model=list[MindmapSummaryResponse])
+async def list_mindmaps_endpoint(
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    mindmaps = await mindmap_service.list_mindmaps(db)
+    return mindmaps
 
 
 @router.get("/mindmap", response_model=MindmapResponse)

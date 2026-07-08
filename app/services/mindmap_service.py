@@ -223,6 +223,13 @@ def _build_payload(pages: list) -> str:
     return "\n".join(lines)
 
 
+async def list_mindmaps(db: AsyncSession) -> list[WikiMindmap]:
+    """List all mindmaps ordered by most recent first."""
+    stmt = select(WikiMindmap).order_by(WikiMindmap.generated_at.desc())
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def get_mindmap(
     db: AsyncSession,
     scope_type: str,

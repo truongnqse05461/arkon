@@ -161,6 +161,20 @@ def test_filter_pages_keeps_short_summary_with_meaningful_content():
 
 
 @pytest.mark.asyncio
+async def test_list_mindmaps_returns_all():
+    from app.services.mindmap_service import list_mindmaps
+    db = make_db()
+    mindmaps = [MagicMock(), MagicMock()]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = mindmaps
+    db.execute = AsyncMock(return_value=mock_result)
+
+    result = await list_mindmaps(db)
+    assert len(result) == 2
+    db.execute.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_generate_mindmap_calls_llm_and_upserts():
     from app.services.mindmap_service import generate_mindmap
     db = make_db()
