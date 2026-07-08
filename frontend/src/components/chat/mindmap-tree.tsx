@@ -238,29 +238,39 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
 
   // Fix SVG rendering order: move edges (path) before nodes (g > foreignObject)
   // SVG doesn't support z-index; later elements render on top.
+  // This must be recursive because react-d3-tree nests <g> groups at every level.
   useEffect(() => {
     if (!containerRef.current) return;
+
+    function reorderEdgesBehindNodes(group: SVGGElement) {
+      // Reorder children of this group: paths first, then groups
+      const children = Array.from(group.children);
+      const paths: Element[] = [];
+      const others: Element[] = [];
+      for (const child of children) {
+        if (child.tagName === "path") paths.push(child);
+        else others.push(child);
+      }
+      // If any path comes after any non-path, reorder
+      const needsReorder = paths.some((p) => {
+        const pIdx = children.indexOf(p);
+        return others.some((o) => children.indexOf(o) < pIdx);
+      });
+      if (needsReorder) {
+        for (const p of paths) group.insertBefore(p, group.firstChild);
+      }
+      // Recurse into child groups
+      for (const child of others) {
+        if (child.tagName === "g") reorderEdgesBehindNodes(child as SVGGElement);
+      }
+    }
+
     const observer = new MutationObserver(() => {
       const svg = containerRef.current?.querySelector("svg");
       if (!svg) return;
       const rootG = svg.querySelector("g");
       if (!rootG) return;
-      // Collect path and g children
-      const paths: Element[] = [];
-      const groups: Element[] = [];
-      for (const child of Array.from(rootG.children)) {
-        if (child.tagName === "path") paths.push(child);
-        else if (child.tagName === "g") groups.push(child);
-      }
-      // Only reorder if paths come after groups (edges on top of nodes)
-      if (paths.length > 0 && groups.length > 0) {
-        const lastPathIdx = Array.from(rootG.children).indexOf(paths[paths.length - 1]);
-        const firstGroupIdx = Array.from(rootG.children).indexOf(groups[0]);
-        if (lastPathIdx > firstGroupIdx) {
-          // Move all paths to the front
-          for (const p of paths) rootG.insertBefore(p, rootG.firstChild);
-        }
-      }
+      reorderEdgesBehindNodes(rootG);
     });
     observer.observe(containerRef.current, { childList: true, subtree: true });
     return () => observer.disconnect();
