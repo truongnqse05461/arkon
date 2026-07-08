@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useChat } from "ai/react";
 import type { UIMessage, Message } from "ai";
 import { MessageList } from "./message-list";
@@ -45,6 +46,16 @@ export function ChatArea({
       onSessionUpdated();
     },
   });
+
+  // Read prefilled input from URL (for Mindmap → Chat navigation)
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const prefilled = searchParams.get("input");
+    if (prefilled) {
+      setInput(prefilled);
+      window.history.replaceState({}, "", "/knowledge/chat");
+    }
+  }, [searchParams, setInput]);
 
   const handleSend = useCallback(() => {
     if (!input.trim() || isLoading) return;

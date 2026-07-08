@@ -30,14 +30,20 @@ function formatAge(iso: string): string {
 }
 
 export function MindmapViewer({ mindmap, onBack, onRegenerate, onDelete }: MindmapViewerProps) {
+  const handleAskInChat = useCallback((name: string) => {
+    window.location.href = `/knowledge/chat?input=${encodeURIComponent(`Explain about "${name}"`)}`;
+  }, []);
+
   const handleNodeClick = useCallback((node: { name: string; page_slug?: string }) => {
     if (node.page_slug) {
       if (node.page_slug.startsWith("source:")) {
         return;
       }
       window.open(`/wiki/${node.page_slug}`, "_blank");
+    } else {
+      handleAskInChat(node.name);
     }
-  }, []);
+  }, [handleAskInChat]);
 
   return (
     <div className="flex flex-col h-full">
