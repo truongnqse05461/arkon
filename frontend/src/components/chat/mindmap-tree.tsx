@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { CustomNodeElementProps } from "react-d3-tree";
 import { MindmapNodePopover } from "./mindmap-node-popover";
+import { wikiTypeColor } from "@/components/wiki/wiki-type-badge";
 
 // react-d3-tree uses browser APIs — no SSR
 const Tree = dynamic(() => import("react-d3-tree"), { ssr: false });
@@ -24,29 +25,20 @@ type MindMapTreeProps = {
   metadata?: { pageCount: number; generatedAt: string };
 };
 
-// Type-based colors (from wiki-type-badge.tsx style)
-const TYPE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  entity: { bg: "#fdf4f0", border: "#f0b89a", text: "#7a3d1a" },
-  concept: { bg: "#f5f0ed", border: "#c4b3a3", text: "#5a4a3a" },
-  topic: { bg: "#f0f5f3", border: "#9ac4b3", text: "#2a5a4a" },
-  source: { bg: "#f3f0f5", border: "#b39ac4", text: "#4a2a5a" },
-};
-
 const ROOT_COLOR = "#c2b8e8";
 const ROOT_TEXT = "#3a2a6a";
-const DEFAULT_NODE_COLOR = "#dde8f5";
-const DEFAULT_NODE_TEXT = "#2a4a7a";
+const DEFAULT_BASE = "#9ca3af";
 const EDGE_COLOR = "#b0a8d0";
 
 function getNodeStyle(nodeDatum: TreeNode, isRoot: boolean) {
   if (isRoot) return { bg: ROOT_COLOR, border: ROOT_COLOR, text: ROOT_TEXT };
   const type = nodeDatum.page_type;
-  if (type && TYPE_COLORS[type]) {
-    return { bg: TYPE_COLORS[type].bg, border: TYPE_COLORS[type].border, text: TYPE_COLORS[type].text };
+  const base = type ? wikiTypeColor(type) : DEFAULT_BASE;
+  if (nodeDatum.page_slug) {
+    return { bg: `${base}1a`, border: `${base}40`, text: base };
   }
   // Unmatched nodes — slightly desaturated
-  if (!nodeDatum.page_slug) return { bg: "#f0f0f0", border: "#ddd", text: "#666" };
-  return { bg: DEFAULT_NODE_COLOR, border: "#ccc", text: DEFAULT_NODE_TEXT };
+  return { bg: `${DEFAULT_BASE}1a`, border: `${DEFAULT_BASE}40`, text: DEFAULT_BASE };
 }
 
 function getTypeIcon(pageType?: string): string | null {
@@ -82,6 +74,7 @@ function makeRenderNode(
         <div
           // @ts-expect-error xmlns needed for SVG foreignObject
           xmlns="http://www.w3.org/1999/xhtml"
+          className="mindmap-node"
           data-node-label={label}
           style={{
             display: "flex",
@@ -167,9 +160,7 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
     );
     if (el) {
       const rect = el.getBoundingClientRect();
-      setPopoverState((prev) =>
-        prev?.node.name === node.name ? null : { node, rect },
-      );
+      setPopoverState({ node, rect });
     } else {
       // Fallback: pass to parent
       onNodeClick?.(node);
@@ -215,6 +206,13 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
     });
     setPopoverState(null);
   }, []);
+
+  // Auto fit-to-viewport on first render
+  useEffect(() => {
+    if (!ready) return;
+    const timer = requestAnimationFrame(() => handleFitToView());
+    return () => cancelAnimationFrame(timer);
+  }, [ready, handleFitToView]);
 
   const handleReset = useCallback(() => {
     if (containerRef.current) {
@@ -302,7 +300,11 @@ export function MindMapTree({ tree, onNodeClick, metadata }: MindMapTreeProps) {
       )}
 
       {/* Edge colour override */}
-      <style>{`.mindmap-edge { stroke: ${EDGE_COLOR}; stroke-width: 1.5px; fill: none; }`}</style>
+      <style>{`
+        .mindmap-edge { stroke: ${EDGE_COLOR}; stroke-width: 1.5px; fill: none; }
+        .mindmap-node:hover { filter: brightness(1.08); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+        .rd3t-g { transition: transform 200ms ease-out; }
+      `}</style>
     </div>
   );
 }
