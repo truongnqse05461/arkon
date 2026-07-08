@@ -247,6 +247,9 @@ async def generate_mindmap(
     db: AsyncSession,
     scope_type: str,
     scope_id: Optional[uuid.UUID],
+    source_type: str = "wiki",
+    source_ids: Optional[list[uuid.UUID]] = None,
+    instruction: Optional[str] = None,
 ) -> WikiMindmap:
     stmt = select(WikiPage).where(
         WikiPage.scope_type == scope_type,
