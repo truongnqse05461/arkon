@@ -51,6 +51,7 @@ const navSections: NavSection[] = [
       { label: "Reviews", href: "/wiki/review", icon: "fact_check", requiredPermissions: ["wiki:read:own_dept", "wiki:read:all"] },
       { label: "AI Skills", href: "/skills", icon: "bolt", requiredPermissions: ["skill:read:own_dept", "skill:read:all"] },
       { label: "Chat", href: "/knowledge/chat", icon: "chat", requiredPermissions: ["wiki:read:own_dept", "wiki:read:all"] },
+      { label: "Mindmap", href: "/mindmap", icon: "account_tree", requiredPermissions: ["wiki:read:own_dept", "wiki:read:all"] },
     ],
   },
   {
