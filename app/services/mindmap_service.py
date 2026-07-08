@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.registry import ProviderRegistry
-from app.database.models import WikiMindmap, WikiPage
+from app.database.models import Source, WikiMindmap, WikiPage
 
 SMALL_WIKI_THRESHOLD = 150
 EXCERPT_CHARS = 600
@@ -223,6 +223,49 @@ def _build_payload(pages: list) -> str:
     return "\n".join(lines)
 
 
+_SOURCE_DOC_TEXT_LIMIT = 8000
+
+
+def _build_source_doc_payload(sources: list) -> str:
+    """Build payload from source documents."""
+    lines = []
+    for src in sources:
+        title = _first_text(getattr(src, "title", None), "Untitled")
+        text = _first_text(getattr(src, "full_text", None), "")
+        if text:
+            text = text[:_SOURCE_DOC_TEXT_LIMIT]
+        lines.append(f"- {title}: {text}")
+    return "\n".join(lines)
+
+
+def _enrich_tree_nodes_from_sources(tree: dict, sources: list) -> dict:
+    """Enrich nodes with source document metadata."""
+    lookup: dict[str, list[dict]] = {}
+    for src in sources:
+        title = _first_text(getattr(src, "title", None))
+        if not title:
+            continue
+        key = _normalize_name(title)
+        entry = {
+            "id": str(getattr(src, "id", "")),
+            "title": title,
+            "source_type": getattr(src, "source_type", "file"),
+        }
+        lookup.setdefault(key, []).append(entry)
+
+    def enrich_node(node: dict) -> dict:
+        match = _match_node(node.get("name", ""), lookup)
+        if match:
+            node["page_slug"] = f"source:{match['id']}"
+            node["page_type"] = "document"
+            node["summary"] = match["title"][:_SUMMARY_MAX_LEN]
+        for child in node.get("children", []):
+            enrich_node(child)
+        return node
+
+    return enrich_node(tree)
+
+
 async def list_mindmaps(db: AsyncSession) -> list[WikiMindmap]:
     """List all mindmaps ordered by most recent first."""
     stmt = select(WikiMindmap).order_by(WikiMindmap.generated_at.desc())
@@ -251,19 +294,33 @@ async def generate_mindmap(
     source_ids: Optional[list[uuid.UUID]] = None,
     instruction: Optional[str] = None,
 ) -> WikiMindmap:
-    stmt = select(WikiPage).where(
-        WikiPage.scope_type == scope_type,
-        WikiPage.scope_id == scope_id,
-        WikiPage.orphaned.is_(False),
-    )
-    result = await db.execute(stmt)
-    pages = _filter_pages_for_mindmap(list(result.scalars().all()))
+    if source_type == "source_docs" and source_ids:
+        # Fetch source documents
+        stmt = select(Source).where(Source.id.in_(source_ids))
+        result = await db.execute(stmt)
+        sources = list(result.scalars().all())
+        if not sources:
+            raise ValueError("No source documents found for the given IDs.")
+        payload = _build_source_doc_payload(sources)
+        page_count = len(sources)
+    else:
+        # Wiki mode (existing behavior)
+        stmt = select(WikiPage).where(
+            WikiPage.scope_type == scope_type,
+            WikiPage.scope_id == scope_id,
+            WikiPage.orphaned.is_(False),
+        )
+        result = await db.execute(stmt)
+        pages = _filter_pages_for_mindmap(list(result.scalars().all()))
+        if not pages:
+            raise ValueError("No wiki pages found for this scope.")
+        payload = _build_payload(pages)
+        page_count = len(pages)
 
-    if not pages:
-        raise ValueError("No wiki pages found for this scope.")
-
-    payload = _build_payload(pages)
+    # Build prompt with optional instruction
     prompt = _PROMPT_TEMPLATE.format(pages=payload)
+    if instruction:
+        prompt += f"\n\nAdditional instructions: {instruction}"
 
     registry = ProviderRegistry(db)
     llm = await registry.get_llm()
@@ -287,7 +344,11 @@ async def generate_mindmap(
     if not isinstance(tree, dict):
         raise ValueError(f"LLM returned unexpected JSON shape: {type(tree).__name__}")
 
-    tree = _enrich_tree_nodes(tree, pages)
+    # Enrich nodes based on source type
+    if source_type == "source_docs" and source_ids:
+        tree = _enrich_tree_nodes_from_sources(tree, sources)
+    else:
+        tree = _enrich_tree_nodes(tree, pages)
 
     title = str(tree.get("name", "Knowledge Base"))
 
@@ -295,7 +356,10 @@ async def generate_mindmap(
     if existing:
         existing.title = title
         existing.tree_json = tree
-        existing.wiki_page_count = len(pages)
+        existing.wiki_page_count = page_count
+        existing.source_type = source_type
+        existing.source_ids = [str(sid) for sid in source_ids] if source_ids else None
+        existing.instruction = instruction
         await db.flush()
         await db.refresh(existing)
         return existing
@@ -305,7 +369,10 @@ async def generate_mindmap(
         scope_id=scope_id,
         title=title,
         tree_json=tree,
-        wiki_page_count=len(pages),
+        wiki_page_count=page_count,
+        source_type=source_type,
+        source_ids=[str(sid) for sid in source_ids] if source_ids else None,
+        instruction=instruction,
     )
     db.add(mindmap)
     await db.flush()

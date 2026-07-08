@@ -503,3 +503,41 @@ def test_enrich_tree_matches_original_title_when_translated():
     assert child["page_slug"] == "concept/hsa"
     assert child["page_type"] == "concept"
     assert child["summary"] == "Scalable patterns"
+
+
+# --- Source document support tests ---
+
+
+def make_source(title: str, full_text: str = "content " * 100, source_type: str = "file"):
+    src = MagicMock()
+    src.id = uuid.uuid4()
+    src.title = title
+    src.full_text = full_text
+    src.source_type = source_type
+    return src
+
+
+def test_build_source_doc_payload_basic():
+    from app.services.mindmap_service import _build_source_doc_payload
+    sources = [make_source("Doc A", "Content A " * 100), make_source("Doc B", "Content B " * 100)]
+    result = _build_source_doc_payload(sources)
+    assert "Doc A" in result
+    assert "Doc B" in result
+    assert "Content A" in result
+
+
+def test_build_source_doc_payload_truncates_large_text():
+    from app.services.mindmap_service import _build_source_doc_payload
+    sources = [make_source("Big Doc", "x" * 20000)]
+    result = _build_source_doc_payload(sources)
+    assert len(result) < 10000
+
+
+def test_enrich_tree_nodes_from_sources():
+    from app.services.mindmap_service import _enrich_tree_nodes_from_sources
+    sources = [make_source("Architecture Guide", "arch content")]
+    tree = {"name": "KB", "children": [{"name": "Architecture Guide", "children": []}]}
+    result = _enrich_tree_nodes_from_sources(tree, sources)
+    child = result["children"][0]
+    assert child["page_slug"].startswith("source:")
+    assert child["page_type"] == "document"
