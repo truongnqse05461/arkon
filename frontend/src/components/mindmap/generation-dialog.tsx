@@ -16,6 +16,14 @@ type Source = {
   source_type: string;
 };
 
+type SourcesResponse = {
+  items: Source[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+};
+
 type GenerationDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -31,6 +39,7 @@ export function GenerationDialog({ open, onOpenChange, onGenerated }: Generation
   const [instruction, setInstruction] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingSources, setLoadingSources] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -55,12 +64,13 @@ export function GenerationDialog({ open, onOpenChange, onGenerated }: Generation
     if (!open || sourceType !== "source_docs") return;
     async function loadSources() {
       setLoadingSources(true);
+      setSources([]);
       try {
         const qs = selectedScope.id
-          ? `scope_type=${selectedScope.type}&scope_id=${selectedScope.id}`
-          : `scope_type=${selectedScope.type}`;
-        const data = await api<Source[]>(`/api/sources?${qs}`);
-        setSources(Array.isArray(data) ? data : []);
+          ? `scope_type=${selectedScope.type}&scope_id=${selectedScope.id}&page_size=100`
+          : `scope_type=${selectedScope.type}&page_size=100`;
+        const data = await api<SourcesResponse>(`/api/sources?${qs}`);
+        setSources(Array.isArray(data?.items) ? data.items : []);
       } catch {
         setSources([]);
       } finally {
@@ -72,6 +82,7 @@ export function GenerationDialog({ open, onOpenChange, onGenerated }: Generation
 
   const handleGenerate = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       await api("/api/mindmap/generate", {
         method: "POST",
@@ -82,13 +93,16 @@ export function GenerationDialog({ open, onOpenChange, onGenerated }: Generation
           source_ids: sourceType === "source_docs" ? selectedSourceIds : undefined,
           instruction: instruction.trim() || undefined,
         },
+        timeoutMs: 120_000,
       });
       onGenerated();
       onOpenChange(false);
       setInstruction("");
       setSelectedSourceIds([]);
-    } catch {
-      // Handle error
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Generation failed";
+      setError(message);
+      alert(message);
     } finally {
       setLoading(false);
     }
@@ -126,7 +140,7 @@ export function GenerationDialog({ open, onOpenChange, onGenerated }: Generation
             >
               {scopes.map((s) => (
                 <option key={`${s.type}|${s.id ?? ""}`} value={`${s.type}|${s.id ?? ""}`}>
-                  {s.type === "global" ? "\u{1F310}" : s.type === "department" ? "\u{1F3E2}" : "\u{1F4C1}"} {s.label}
+                  {s.type === "global" ? "🌐" : s.type === "department" ? "🏢" : "📁"} {s.label}
                 </option>
               ))}
             </select>

@@ -13,11 +13,18 @@ type MindmapSummary = {
   generated_at: string;
 };
 
+type Scope = {
+  type: string;
+  id: string | null;
+  name: string;
+};
+
 type MindmapListProps = {
   onView: (mindmap: MindmapSummary) => void;
   onRegenerate: (mindmap: MindmapSummary) => void;
   onDelete: (mindmap: MindmapSummary) => void;
   refreshKey: number;
+  onDataLoaded: (hasItems: boolean) => void;
 };
 
 function formatAge(iso: string): string {
@@ -28,32 +35,62 @@ function formatAge(iso: string): string {
   return `${days} days ago`;
 }
 
-function scopeLabel(scopeType: string, scopeId: string | null): string {
-  if (scopeType === "global") return "🌐 Global";
-  if (scopeType === "department") return "🏢 Department";
-  if (scopeType === "project") return "🏁 Project";
-  return scopeType;
-}
-
-export function MindmapList({ onView, onRegenerate, onDelete, refreshKey }: MindmapListProps) {
+export function MindmapList({ onView, onRegenerate, onDelete, refreshKey, onDataLoaded }: MindmapListProps) {
   const [mindmaps, setMindmaps] = useState<MindmapSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scopes, setScopes] = useState<Scope[]>([]);
+
+  // Load scope names for display
+  useEffect(() => {
+    async function loadScopes() {
+      try {
+        const [depts, projects] = await Promise.all([
+          api<{ id: string; name: string }[]>("/api/departments"),
+          api<{ id: string; name: string }[]>("/api/projects"),
+        ]);
+        const allScopes: Scope[] = [
+          { type: "global", id: null, name: "Global" },
+          ...depts.map((d) => ({ type: "department", id: d.id, name: d.name })),
+          ...projects.map((p) => ({ type: "project", id: p.id, name: p.name })),
+        ];
+        setScopes(allScopes);
+      } catch {
+        setScopes([{ type: "global", id: null, name: "Global" }]);
+      }
+    }
+    loadScopes();
+  }, []);
 
   const fetchMindmaps = useCallback(async () => {
     setLoading(true);
     try {
       const data = await api<MindmapSummary[]>("/api/mindmaps");
-      setMindmaps(Array.isArray(data) ? data : []);
+      const items = Array.isArray(data) ? data : [];
+      setMindmaps(items);
+      onDataLoaded(items.length > 0);
     } catch {
       setMindmaps([]);
+      onDataLoaded(false);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onDataLoaded]);
 
   useEffect(() => {
     fetchMindmaps();
   }, [fetchMindmaps, refreshKey]);
+
+  const getScopeLabel = (scopeType: string, scopeId: string | null): string => {
+    const scope = scopes.find((s) => s.type === scopeType && (s.id ?? null) === (scopeId ?? null));
+    if (scope) {
+      const icon = scopeType === "global" ? "🌐" : scopeType === "department" ? "🏢" : "📁";
+      return `${icon} ${scope.name}`;
+    }
+    if (scopeType === "global") return "🌐 Global";
+    if (scopeType === "department") return "🏢 Department";
+    if (scopeType === "project") return "📁 Project";
+    return scopeType;
+  };
 
   if (loading) {
     return (
@@ -85,7 +122,7 @@ export function MindmapList({ onView, onRegenerate, onDelete, refreshKey }: Mind
           {mindmaps.map((mm) => (
             <tr key={mm.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
               <td className="px-4 py-3">
-                <span className="font-medium">{scopeLabel(mm.scope_type, mm.scope_id)}</span>
+                <span className="font-medium">{getScopeLabel(mm.scope_type, mm.scope_id)}</span>
               </td>
               <td className="px-4 py-3">
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-muted">
