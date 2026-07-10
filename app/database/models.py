@@ -1382,7 +1382,7 @@ class ChatMessage(Base):
 # ---------------------------------------------------------------------------
 
 class WikiMindmap(Base):
-    """Cached AI-generated MindMap tree for a wiki scope. One row per (scope_type, scope_id)."""
+    """Cached AI-generated MindMap tree for a wiki scope. Multiple rows per scope allowed."""
     __tablename__ = "wiki_mindmaps"
 
     id: Mapped[uuid.UUID] = mapped_column(

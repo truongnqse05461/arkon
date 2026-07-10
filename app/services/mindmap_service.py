@@ -367,9 +367,18 @@ async def _generate_node_summaries(
     return summaries
 
 
-async def list_mindmaps(db: AsyncSession) -> list[WikiMindmap]:
-    """List all mindmaps ordered by most recent first."""
-    stmt = select(WikiMindmap).order_by(WikiMindmap.generated_at.desc())
+async def list_mindmaps(
+    db: AsyncSession,
+    scope_type: Optional[str] = None,
+    scope_id: Optional[uuid.UUID] = None,
+) -> list[WikiMindmap]:
+    """List all mindmaps, optionally filtered by scope."""
+    stmt = select(WikiMindmap)
+    if scope_type:
+        stmt = stmt.where(WikiMindmap.scope_type == scope_type)
+    if scope_id:
+        stmt = stmt.where(WikiMindmap.scope_id == scope_id)
+    stmt = stmt.order_by(WikiMindmap.generated_at.desc())
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
@@ -469,18 +478,6 @@ async def generate_mindmap(
         tree = _apply_summaries(tree, summaries)
 
     title = str(tree.get("name", "Knowledge Base"))
-
-    existing = await get_mindmap(db, scope_type, scope_id, source_type)
-    if existing:
-        existing.title = title
-        existing.tree_json = tree
-        existing.wiki_page_count = page_count
-        existing.source_type = source_type
-        existing.source_ids = [str(sid) for sid in source_ids] if source_ids else None
-        existing.instruction = instruction
-        await db.flush()
-        await db.refresh(existing)
-        return existing
 
     mindmap = WikiMindmap(
         scope_type=scope_type,

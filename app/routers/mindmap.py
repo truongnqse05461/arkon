@@ -64,10 +64,12 @@ class GenerateRequest(BaseModel):
 
 @router.get("/mindmaps", response_model=list[MindmapSummaryResponse])
 async def list_mindmaps_endpoint(
+    scope_type: Optional[str] = None,
+    scope_id: Optional[uuid.UUID] = None,
     db: AsyncSession = Depends(get_db),
     current_user: Employee = Depends(get_current_user),
 ):
-    mindmaps = await mindmap_service.list_mindmaps(db)
+    mindmaps = await mindmap_service.list_mindmaps(db, scope_type=scope_type, scope_id=scope_id)
     return mindmaps
 
 

@@ -192,13 +192,12 @@ async def test_generate_mindmap_calls_llm_and_upserts():
     mock_registry.get_llm = AsyncMock(return_value=mock_llm)
 
     with patch("app.services.mindmap_service.ProviderRegistry", return_value=mock_registry):
-        with patch("app.services.mindmap_service.get_mindmap", return_value=None):
-            result = await generate_mindmap(db, "global", None)
-            db.add.assert_called_once()
-            db.flush.assert_called()
-            prompt = mock_llm.generate.call_args_list[0].args[0]
-            assert "learner-facing concept map" in prompt
-            assert "Wiki knowledge pages" in prompt
+        result = await generate_mindmap(db, "global", None)
+        db.add.assert_called_once()
+        db.flush.assert_called()
+        prompt = mock_llm.generate.call_args_list[0].args[0]
+        assert "learner-facing concept map" in prompt
+        assert "Wiki knowledge pages" in prompt
 
 
 @pytest.mark.asyncio
@@ -230,9 +229,8 @@ async def test_generate_mindmap_strips_markdown_fences():
     mock_registry.get_llm = AsyncMock(return_value=mock_llm)
 
     with patch("app.services.mindmap_service.ProviderRegistry", return_value=mock_registry):
-        with patch("app.services.mindmap_service.get_mindmap", return_value=None):
-            result = await generate_mindmap(db, "global", None)
-            assert result is not None
+        result = await generate_mindmap(db, "global", None)
+        assert result is not None
 
 
 @pytest.mark.asyncio
@@ -255,8 +253,7 @@ async def test_generate_mindmap_uses_only_filtered_pages_and_count():
     mock_registry.get_llm = AsyncMock(return_value=mock_llm)
 
     with patch("app.services.mindmap_service.ProviderRegistry", return_value=mock_registry):
-        with patch("app.services.mindmap_service.get_mindmap", return_value=None):
-            result = await generate_mindmap(db, "global", None)
+        result = await generate_mindmap(db, "global", None)
 
     assert result.wiki_page_count == 1
     prompt = mock_llm.generate.call_args_list[0].args[0]
@@ -280,7 +277,7 @@ async def test_generate_mindmap_raises_when_only_internal_pages():
 
 
 @pytest.mark.asyncio
-async def test_generate_mindmap_updates_existing():
+async def test_generate_mindmap_always_creates_new():
     from app.services.mindmap_service import generate_mindmap
     db = make_db()
     pages = [make_page("Architecture")]
@@ -294,18 +291,11 @@ async def test_generate_mindmap_updates_existing():
     mock_registry = AsyncMock()
     mock_registry.get_llm = AsyncMock(return_value=mock_llm)
 
-    existing = MagicMock()
-    existing.title = "Old Title"
-    existing.tree_json = {}
-    existing.wiki_page_count = 0
-
     with patch("app.services.mindmap_service.ProviderRegistry", return_value=mock_registry):
-        with patch("app.services.mindmap_service.get_mindmap", return_value=existing):
-            result = await generate_mindmap(db, "global", None)
-            assert result is existing
-            assert existing.title == "KB"
-            assert existing.wiki_page_count == 1
-            db.flush.assert_called()
+        result = await generate_mindmap(db, "global", None)
+        db.add.assert_called_once()
+        db.flush.assert_called()
+        db.refresh.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -324,9 +314,8 @@ async def test_generate_mindmap_raises_on_non_dict_json():
     mock_registry.get_llm = AsyncMock(return_value=mock_llm)
 
     with patch("app.services.mindmap_service.ProviderRegistry", return_value=mock_registry):
-        with patch("app.services.mindmap_service.get_mindmap", return_value=None):
-            with pytest.raises(ValueError, match="unexpected JSON shape"):
-                await generate_mindmap(db, "global", None)
+        with pytest.raises(ValueError, match="unexpected JSON shape"):
+            await generate_mindmap(db, "global", None)
 
 
 # --- _enrich_tree_nodes tests ---
