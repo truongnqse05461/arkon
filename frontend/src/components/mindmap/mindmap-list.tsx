@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
+import { formatAge } from "@/lib/format-age";
 
 type MindmapSummary = {
   id: string;
@@ -26,14 +27,6 @@ type MindmapListProps = {
   refreshKey: number;
   onDataLoaded: (hasItems: boolean) => void;
 };
-
-function formatAge(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const days = Math.floor(diff / 86_400_000);
-  if (days === 0) return "today";
-  if (days === 1) return "1 day ago";
-  return `${days} days ago`;
-}
 
 export function MindmapList({ onView, onRegenerate, onDelete, refreshKey, onDataLoaded }: MindmapListProps) {
   const [mindmaps, setMindmaps] = useState<MindmapSummary[]>([]);

@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import { MindMapTree } from "@/components/chat/mindmap-tree";
+import { formatAge } from "@/lib/format-age";
 
 type MindmapData = {
   id: string;
@@ -20,14 +21,6 @@ type MindmapViewerProps = {
   onRegenerate: () => void;
   onDelete: () => void;
 };
-
-function formatAge(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const days = Math.floor(diff / 86_400_000);
-  if (days === 0) return "today";
-  if (days === 1) return "1 day ago";
-  return `${days} days ago`;
-}
 
 export function MindmapViewer({ mindmap, onBack, onRegenerate, onDelete }: MindmapViewerProps) {
   const handleAskInChat = useCallback((name: string) => {
