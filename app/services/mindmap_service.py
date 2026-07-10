@@ -20,7 +20,10 @@ INTERNAL_PAGE_SLUGS = {"_index", "_log"}
 _SUMMARY_BATCH_SIZE = 15
 _SUMMARY_MAX_CHARS = 150
 
-_SYSTEM = "You are a knowledge architect. Return ONLY valid JSON - no markdown, no explanation."
+_SYSTEM = (
+    "You are a knowledge architect. Return ONLY valid JSON - no markdown, no explanation. "
+    'Return an object with "title" (string, 3-8 words) and "tree" (the concept map object).'
+)
 
 _PROMPT_TEMPLATE = """\
 You are given wiki knowledge pages from an organization's knowledge base.
@@ -34,18 +37,22 @@ relationships, and dependencies.
 
 Return valid JSON matching this schema exactly:
 {{
-  "name": "<root topic name - 2-4 words summarising the whole KB>",
-  "children": [
-    {{
-      "name": "<subtopic>",
-      "children": [
-        {{"name": "<leaf>", "children": []}}
-      ]
-    }}
-  ]
+  "title": "<short descriptive title - 3-8 words>",
+  "tree": {{
+    "name": "<root topic name - 2-4 words summarising the whole KB>",
+    "children": [
+      {{
+        "name": "<subtopic>",
+        "children": [
+          {{"name": "<leaf>", "children": []}}
+        ]
+      }}
+    ]
+  }}
 }}
 
 Rules:
+- "title" should be a concise, descriptive name for this mindmap.
 - Depth should match the natural complexity - no fixed level limit.
 - Every node must have a "children" key (empty array for leaves).
 - Node names must be concise, user-facing concepts.
@@ -448,7 +455,7 @@ async def generate_mindmap(
     raw = await llm.generate(prompt, system=_SYSTEM, temperature=0.3, max_tokens=4096)
 
     try:
-        tree = json.loads(raw.strip())
+        parsed = json.loads(raw.strip())
     except json.JSONDecodeError:
         cleaned = (
             raw.strip()
@@ -458,12 +465,20 @@ async def generate_mindmap(
             .strip()
         )
         try:
-            tree = json.loads(cleaned)
+            parsed = json.loads(cleaned)
         except json.JSONDecodeError as exc:
             raise ValueError(f"LLM returned unparseable JSON: {exc}") from exc
 
-    if not isinstance(tree, dict):
-        raise ValueError(f"LLM returned unexpected JSON shape: {type(tree).__name__}")
+    if not isinstance(parsed, dict):
+        raise ValueError(f"LLM returned unexpected JSON shape: {type(parsed).__name__}")
+
+    # Extract title and tree from wrapped response
+    title = str(parsed.get("title", "")).strip() or "Untitled Mindmap"
+    tree = parsed.get("tree", parsed)
+    if not isinstance(tree, dict) or "name" not in tree:
+        # Fallback: maybe LLM returned tree directly without wrapper
+        tree = parsed
+        title = str(tree.get("name", "Untitled Mindmap"))
 
     # Enrich nodes based on source type
     if source_type == "source_docs" and source_ids:
@@ -476,8 +491,6 @@ async def generate_mindmap(
     if unmatched:
         summaries = await _generate_node_summaries(unmatched, llm)
         tree = _apply_summaries(tree, summaries)
-
-    title = str(tree.get("name", "Knowledge Base"))
 
     mindmap = WikiMindmap(
         scope_type=scope_type,
