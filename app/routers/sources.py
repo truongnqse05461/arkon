@@ -179,6 +179,8 @@ def _source_load_options():
 async def list_sources(
     knowledge_type_id: Optional[uuid.UUID] = Query(None),
     department_id: Optional[uuid.UUID] = Query(None),
+    scope_type: Optional[str] = Query(None),
+    scope_id: Optional[uuid.UUID] = Query(None),
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
@@ -239,6 +241,17 @@ async def list_sources(
         )
         base = base.where(dept_exists)
         count_base = count_base.where(dept_exists)
+    if scope_type:
+        base = base.where(Source.scope_type == scope_type)
+        count_base = count_base.where(Source.scope_type == scope_type)
+    if scope_id:
+        base = base.where(Source.scope_id == scope_id)
+        count_base = count_base.where(Source.scope_id == scope_id)
+    else:
+        # When scope_type is provided but scope_id is not, filter for global (null scope_id)
+        if scope_type:
+            base = base.where(Source.scope_id.is_(None))
+            count_base = count_base.where(Source.scope_id.is_(None))
     if status:
         base = base.where(Source.status == status)
         count_base = count_base.where(Source.status == status)

@@ -15,12 +15,19 @@ import {
 // react-d3-tree uses browser APIs — no SSR
 const Tree = dynamic(() => import("react-d3-tree"), { ssr: false });
 
+export type TreeNodeSource = {
+  slug: string;
+  type: string;
+  title: string;
+};
+
 export type TreeNode = {
   name: string;
   children: TreeNode[];
   page_slug?: string;
   page_type?: string;
   summary?: string;
+  sources?: TreeNodeSource[];
   scope_type?: string;
   scope_id?: string | null;
 };
@@ -43,7 +50,8 @@ function makeRenderNode(
     const label: string = nodeDatum.name;
     const node = nodeDatum as unknown as TreeNode;
     const style = getNodeStyle(node, isRoot);
-    const typeIcon = getTypeIcon(node.page_slug ? node.page_type : undefined);
+    const hasSources = Boolean(node.page_slug || (node.sources && node.sources.length > 0));
+    const typeIcon = getTypeIcon(hasSources ? node.page_type : undefined);
     const isActive = activeNodeKey === label;
     const nodeWidth = getNodeWidth(node, isRoot);
     const fh = isRoot ? 44 : 34;

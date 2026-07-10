@@ -17,7 +17,8 @@ export function getNodeStyle(nodeDatum: TreeNode, isRoot: boolean) {
   if (isRoot) return { bg: ROOT_COLOR, border: ROOT_COLOR, text: ROOT_TEXT };
   const type = nodeDatum.page_type;
   const base = type ? wikiTypeColor(type) : DEFAULT_BASE;
-  if (nodeDatum.page_slug) {
+  const hasSources = Boolean(nodeDatum.page_slug || (nodeDatum.sources && nodeDatum.sources.length > 0));
+  if (hasSources) {
     return { bg: `${base}1a`, border: `${base}40`, text: base };
   }
   return { bg: `${DEFAULT_BASE}1a`, border: `${DEFAULT_BASE}40`, text: DEFAULT_BASE };
@@ -29,13 +30,16 @@ export function getTypeIcon(pageType?: string): string | null {
     concept: "lightbulb",
     topic: "topic",
     source: "description",
+    source_doc: "description",
+    document: "description",
   };
   return icons[pageType ?? ""] ?? null;
 }
 
 export function getNodeWidth(node: TreeNode, isRoot: boolean): number {
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
-  const typeIcon = getTypeIcon(node.page_slug ? node.page_type : undefined);
+  const hasSources = Boolean(node.page_slug || (node.sources && node.sources.length > 0));
+  const typeIcon = getTypeIcon(hasSources ? node.page_type : undefined);
   const charWidth = isRoot ? 9 : 8;
   const iconSpace = typeIcon ? 18 : 0;
   return Math.min(

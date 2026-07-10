@@ -138,6 +138,7 @@ def _build_page_lookup(pages: list[WikiPage]) -> dict[str, list[dict]]:
         entry = {
             "slug": getattr(page, "slug", ""),
             "page_type": getattr(page, "page_type", "concept"),
+            "title": display_title or original_title,
             "summary": summary_raw[:_SUMMARY_MAX_LEN] if summary_raw else "",
         }
         # Index by translated title (primary)
@@ -208,6 +209,13 @@ def _enrich_tree_nodes(tree: dict, pages: list[WikiPage]) -> dict:
             node["page_type"] = match["page_type"]
             if match["summary"]:
                 node["summary"] = match["summary"]
+            # Add to sources array for multi-source support
+            source_entry = {
+                "slug": match["slug"],
+                "type": match["page_type"],
+                "title": match.get("title", match["slug"]),
+            }
+            node.setdefault("sources", []).append(source_entry)
         for child in node.get("children", []):
             enrich_node(child)
         return node
@@ -262,6 +270,13 @@ def _enrich_tree_nodes_from_sources(tree: dict, sources: list) -> dict:
             node["page_slug"] = f"source:{match['id']}"
             node["page_type"] = "document"
             node["summary"] = match["title"][:_SUMMARY_MAX_LEN]
+            # Add to sources array for multi-source support
+            source_entry = {
+                "slug": f"source:{match['id']}",
+                "type": "source_doc",
+                "title": match["title"],
+            }
+            node.setdefault("sources", []).append(source_entry)
         for child in node.get("children", []):
             enrich_node(child)
         return node
@@ -291,11 +306,12 @@ Rules:
 
 
 def _collect_unmatched_nodes(tree: dict) -> list[str]:
-    """Collect node names that have no page_slug and no summary."""
+    """Collect node names that have no page_slug, no sources, and no summary."""
     unmatched = []
 
     def walk(node: dict):
-        if not node.get("page_slug") and not node.get("summary"):
+        has_sources = bool(node.get("sources"))
+        if not node.get("page_slug") and not has_sources and not node.get("summary"):
             name = node.get("name", "")
             if name:
                 unmatched.append(name)
@@ -362,11 +378,22 @@ async def get_mindmap(
     db: AsyncSession,
     scope_type: str,
     scope_id: Optional[uuid.UUID],
+    source_type: str = "wiki",
 ) -> Optional[WikiMindmap]:
     stmt = select(WikiMindmap).where(
         WikiMindmap.scope_type == scope_type,
         WikiMindmap.scope_id == scope_id,
+        WikiMindmap.source_type == source_type,
     )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def get_mindmap_by_id(
+    db: AsyncSession,
+    mindmap_id: uuid.UUID,
+) -> Optional[WikiMindmap]:
+    stmt = select(WikiMindmap).where(WikiMindmap.id == mindmap_id)
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
@@ -443,7 +470,7 @@ async def generate_mindmap(
 
     title = str(tree.get("name", "Knowledge Base"))
 
-    existing = await get_mindmap(db, scope_type, scope_id)
+    existing = await get_mindmap(db, scope_type, scope_id, source_type)
     if existing:
         existing.title = title
         existing.tree_json = tree

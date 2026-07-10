@@ -42,7 +42,7 @@ export default function MindmapPage() {
 
   const handleView = useCallback(async (mm: MindmapSummary) => {
     try {
-      const data = await api<MindmapData>(`/api/mindmap?scope_type=${mm.scope_type}${mm.scope_id ? `&scope_id=${mm.scope_id}` : ""}`);
+      const data = await api<MindmapData>(`/api/mindmap/${mm.id}`);
       setViewerMindmap(data);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to load mindmap";

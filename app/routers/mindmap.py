@@ -75,12 +75,25 @@ async def list_mindmaps_endpoint(
 async def get_mindmap_endpoint(
     scope_type: Literal["global", "department", "project"] = "global",
     scope_id: Optional[uuid.UUID] = None,
+    source_type: Literal["wiki", "source_docs"] = "wiki",
     db: AsyncSession = Depends(get_db),
     current_user: Employee = Depends(get_current_user),
 ):
-    mindmap = await mindmap_service.get_mindmap(db, scope_type, scope_id)
+    mindmap = await mindmap_service.get_mindmap(db, scope_type, scope_id, source_type)
     if not mindmap:
         raise HTTPException(status_code=404, detail="No MindMap for this scope yet.")
+    return mindmap
+
+
+@router.get("/mindmap/{mindmap_id}", response_model=MindmapResponse)
+async def get_mindmap_by_id_endpoint(
+    mindmap_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Employee = Depends(get_current_user),
+):
+    mindmap = await mindmap_service.get_mindmap_by_id(db, mindmap_id)
+    if not mindmap:
+        raise HTTPException(status_code=404, detail="MindMap not found.")
     return mindmap
 
 

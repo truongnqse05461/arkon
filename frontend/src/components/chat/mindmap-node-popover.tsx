@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
-import { wikiTypeIcon, wikiTypeColor } from "@/components/wiki/wiki-type-badge";
 import type { TreeNode } from "./mindmap-tree";
 
 type PopoverProps = {
@@ -13,7 +12,7 @@ type PopoverProps = {
   onClose: () => void;
 };
 
-const POPOVER_MAX_WIDTH = 280;
+const POPOVER_MAX_WIDTH = 320;
 const POPOVER_PADDING = 12;
 
 export function MindmapNodePopover({
@@ -35,10 +34,8 @@ export function MindmapNodePopover({
   // SSR guard – window is undefined during server-side rendering
   if (typeof window === "undefined") return null;
 
-  const hasPage = Boolean(node.page_slug);
-  const typeIcon = hasPage ? wikiTypeIcon(node.page_type ?? "") : "radio_button_unchecked";
-  const typeColor = hasPage ? wikiTypeColor(node.page_type ?? "") : "#9ca3af";
-  const typeLabel = hasPage ? (node.page_type ?? "page") : "unlinked";
+  const sources = node.sources ?? [];
+  const hasSources = sources.length > 0;
 
   // Position: prefer right of node, flip left if not enough space
   const spaceRight = window.innerWidth - anchorRect.right;
@@ -50,7 +47,7 @@ export function MindmapNodePopover({
     POPOVER_PADDING,
     Math.min(
       anchorRect.top + anchorRect.height / 2 - 60,
-      window.innerHeight - 160,
+      window.innerHeight - 200,
     ),
   );
 
@@ -64,7 +61,7 @@ export function MindmapNodePopover({
       />
       {/* Popover */}
       <div
-        className="fixed z-50 min-w-[200px] max-w-[280px] rounded-lg border border-border bg-popover text-popover-foreground shadow-lg overflow-hidden animate-in fade-in-0 zoom-in-95"
+        className="fixed z-50 min-w-[220px] max-w-[320px] rounded-lg border border-border bg-popover text-popover-foreground shadow-lg overflow-hidden animate-in fade-in-0 zoom-in-95"
         style={{ left, top }}
         role="dialog"
         aria-label={`Node: ${node.name}`}
@@ -73,11 +70,16 @@ export function MindmapNodePopover({
         <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
           <span
             className="material-symbols-outlined shrink-0"
-            style={{ fontSize: 16, color: typeColor }}
+            style={{ fontSize: 16, color: hasSources ? "#6366f1" : "#9ca3af" }}
           >
-            {typeIcon}
+            {hasSources ? "description" : "radio_button_unchecked"}
           </span>
-          <span className="text-sm font-medium truncate flex-1">{node.name}</span>
+          <span
+            className="text-sm font-medium truncate flex-1"
+            title={node.name}
+          >
+            {node.name}
+          </span>
           <button
             type="button"
             onClick={onClose}
@@ -88,36 +90,64 @@ export function MindmapNodePopover({
           </button>
         </div>
 
-        {/* Body */}
-        <div className="px-3 py-2 space-y-2">
-          <p className="text-[11px] text-muted-foreground capitalize">{typeLabel}</p>
-          {hasPage && node.summary ? (
-            <p className="text-xs text-foreground/80 leading-relaxed line-clamp-2">
+        {/* Summary */}
+        {node.summary ? (
+          <div className="px-3 py-2 max-h-40 overflow-y-auto">
+            <p className="text-xs text-foreground/80 leading-relaxed">
               {node.summary}
             </p>
-          ) : hasPage ? (
+          </div>
+        ) : (
+          <div className="px-3 py-2">
             <p className="text-xs text-muted-foreground italic">No summary available</p>
-          ) : (
-            <p className="text-xs text-muted-foreground italic">No linked wiki page</p>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* Citations */}
+        {hasSources && (
+          <div className="px-3 py-2 flex flex-wrap gap-1.5 border-t border-border">
+            {sources.map((src, i) => {
+              const isSourceDoc = src.type === "source_doc";
+              const href = isSourceDoc ? "#" : `/wiki/${src.slug}`;
+              const icon = isSourceDoc ? "description" : "menu_book";
+              const truncatedTitle = src.title.length > 30
+                ? src.title.slice(0, 27) + "..."
+                : src.title;
+
+              return (
+                <a
+                  key={i}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] bg-muted rounded hover:bg-muted/80 transition-colors max-w-[140px]"
+                  title={src.title}
+                  onClick={(e) => {
+                    if (isSourceDoc) {
+                      e.preventDefault();
+                      // Source docs don't have a viewer yet
+                    } else {
+                      e.preventDefault();
+                      onOpenPage(src.slug);
+                    }
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 12, flexShrink: 0 }}>
+                    {icon}
+                  </span>
+                  <span className="truncate">{truncatedTitle}</span>
+                </a>
+              );
+            })}
+          </div>
+        )}
 
         {/* Actions */}
-        <div className="flex items-center gap-2 px-3 py-2 border-t border-border bg-muted/20">
-          {hasPage && (
-            <button
-              type="button"
-              onClick={() => onOpenPage(node.page_slug!)}
-              className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-primary text-primary-foreground rounded text-xs font-medium hover:bg-primary/90 transition-colors"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 13 }}>open_in_new</span>
-              Open Page
-            </button>
-          )}
+        <div className="px-3 py-2 border-t border-border bg-muted/20">
           <button
             type="button"
             onClick={() => onAskChat(node.name)}
-            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-muted text-foreground rounded text-xs font-medium hover:bg-muted/80 transition-colors border border-border"
+            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-muted text-foreground rounded text-xs font-medium hover:bg-muted/80 transition-colors border border-border"
           >
             <span className="material-symbols-outlined" style={{ fontSize: 13 }}>chat</span>
             Ask Chat
