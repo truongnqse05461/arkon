@@ -47,7 +47,7 @@ export function MindmapViewer({ mindmap, onBack, onRegenerate, onDelete }: Mindm
         <div className="flex-1 min-w-0">
           <h2 className="text-sm font-semibold truncate">{mindmap.title}</h2>
           <p className="text-xs text-muted-foreground">
-            {mindmap.wiki_page_count} pages · {mindmap.source_type === "source_docs" ? "Source Docs" : "Wiki"} · {formatAge(mindmap.generated_at)}
+            {mindmap.wiki_page_count} {mindmap.wiki_page_count === 1 ? "page" : "pages"} · {mindmap.source_type === "source_docs" ? "Source Docs" : "Wiki"} · {formatAge(mindmap.generated_at)}
           </p>
         </div>
         <div className="flex items-center gap-1">
