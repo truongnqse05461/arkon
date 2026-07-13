@@ -519,6 +519,7 @@ async def stream_agent_response(
     user_message: str,
     attachments: list[dict],
     max_steps: int = 8,
+    scope_override: dict | None = None,
 ) -> AsyncGenerator[str, None]:
     """
     Run the agentic loop and yield Vercel AI SDK data stream protocol lines.
@@ -527,7 +528,7 @@ async def stream_agent_response(
     registry = ProviderRegistry(db)
     llm = await registry.get_llm()
 
-    scope = await _get_scope(db, employee)
+    scope = scope_override if scope_override else await _get_scope(db, employee)
     attachments = await _enrich_source_attachments(db, attachments)
     system_prompt = _build_system_prompt(scope, attachments)
 

@@ -223,6 +223,22 @@ async def stream_chat(
                 yield '3:"Employee not found"\n'
                 return
 
+            # Build scope override from session if set
+            scope_override = None
+            if session.scope_type:
+                from app.services.chat_agent import _get_scope
+                base_scope = await _get_scope(stream_db, emp)
+                if session.scope_type == "global":
+                    base_scope["department_id"] = None
+                    base_scope["project_ids"] = []
+                elif session.scope_type == "department" and session.scope_id:
+                    base_scope["department_id"] = str(session.scope_id)
+                    base_scope["project_ids"] = []
+                elif session.scope_type == "project" and session.scope_id:
+                    base_scope["department_id"] = None
+                    base_scope["project_ids"] = [str(session.scope_id)]
+                scope_override = base_scope
+
             accumulated_assistant_text: list[str] = []
             tool_calls_made: list[dict] = []
 
@@ -232,6 +248,7 @@ async def stream_chat(
                 history=history,
                 user_message=req.message,
                 attachments=attachments,
+                scope_override=scope_override,
             ):
                 if chunk.startswith("0:"):
                     try:
