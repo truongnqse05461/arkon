@@ -162,7 +162,7 @@ async def _get_scope(
     db: AsyncSession, employee: Employee
 ) -> dict:
     """Build scope dict from employee for tool filtering."""
-    dept_id = str(employee.department_id) if employee.department_id else None
+    dept_ids = [str(d) for d in employee.department_ids]
 
     from sqlalchemy import select as sa_select
     from app.database.models import ProjectMember
@@ -187,7 +187,7 @@ async def _get_scope(
 
     return {
         "is_admin": employee.role == "admin",
-        "department_id": dept_id,
+        "department_ids": dept_ids,
         "project_ids": project_ids,
         "allowed_knowledge_types": allowed_kt,
         "employee_id": str(employee.id),
@@ -201,7 +201,7 @@ def _make_identity(scope: dict):
 
     class _Identity:
         is_admin = scope["is_admin"]
-        department_id = _uuid.UUID(scope["department_id"]) if scope["department_id"] else None
+        department_ids = [_uuid.UUID(d) for d in scope.get("department_ids", [])]
         project_ids = scope["project_ids"]
         allowed_knowledge_types = scope["allowed_knowledge_types"]
         allowed_source_ids = scope["allowed_source_ids"]
@@ -228,7 +228,7 @@ async def execute_tool(
         return f"[error: no employee context for tool {tool_name}]"
 
     scope = await _get_scope(db, employee)
-    dept_uuid = _uuid.UUID(scope["department_id"]) if scope["department_id"] else None
+    dept_uuids = [_uuid.UUID(d) for d in scope.get("department_ids", [])]
     proj_uuids = [_uuid.UUID(p) for p in scope["project_ids"]]
     allowed_kt = scope["allowed_knowledge_types"]
     is_admin = scope["is_admin"]
@@ -244,7 +244,7 @@ async def execute_tool(
                 query_embedding=query_embedding,
                 top_k=top_k,
                 allowed_kt_slugs=allowed_kt,
-                department_id=dept_uuid,
+                department_ids=dept_uuids or None,
                 project_ids=proj_uuids or None,
                 all_scopes=is_admin,
             )
@@ -259,11 +259,14 @@ async def execute_tool(
         elif tool_name == "read_wiki_page":
             slug = args["slug"]
             page = await wiki_service.get_page_by_slug(db, slug, allowed_kt_slugs=allowed_kt)
-            if not page and dept_uuid:
-                page = await wiki_service.get_page_by_slug(
-                    db, slug, allowed_kt_slugs=allowed_kt,
-                    scope_type="department", scope_id=dept_uuid,
-                )
+            if not page and dept_uuids:
+                for did in dept_uuids:
+                    page = await wiki_service.get_page_by_slug(
+                        db, slug, allowed_kt_slugs=allowed_kt,
+                        scope_type="department", scope_id=did,
+                    )
+                    if page:
+                        break
             if not page and proj_uuids:
                 for pid in proj_uuids:
                     page = await wiki_service.get_page_by_slug(
@@ -292,7 +295,7 @@ async def execute_tool(
                 allowed_kt_slugs=allowed_kt,
                 limit=args.get("limit", 50),
                 offset=args.get("offset", 0),
-                department_id=dept_uuid,
+                department_ids=dept_uuids or None,
                 project_ids=proj_uuids or None,
                 all_scopes=is_admin,
             )

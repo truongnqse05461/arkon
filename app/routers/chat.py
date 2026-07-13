@@ -216,7 +216,7 @@ async def stream_chat(
             from sqlalchemy.orm import selectinload
             emp = (await stream_db.execute(
                 select(Employee).where(Employee.id == user.id)
-                .options(selectinload(Employee.custom_role), selectinload(Employee.department))
+                .options(selectinload(Employee.custom_role), selectinload(Employee.employee_departments))
             )).scalar_one_or_none()
 
             if emp is None:
@@ -229,13 +229,13 @@ async def stream_chat(
                 from app.services.chat_agent import _get_scope
                 base_scope = await _get_scope(stream_db, emp)
                 if session.scope_type == "global":
-                    base_scope["department_id"] = None
+                    base_scope["department_ids"] = []
                     base_scope["project_ids"] = []
                 elif session.scope_type == "department" and session.scope_id:
-                    base_scope["department_id"] = str(session.scope_id)
+                    base_scope["department_ids"] = [str(session.scope_id)]
                     base_scope["project_ids"] = []
                 elif session.scope_type == "project" and session.scope_id:
-                    base_scope["department_id"] = None
+                    base_scope["department_ids"] = []
                     base_scope["project_ids"] = [str(session.scope_id)]
                 scope_override = base_scope
 
