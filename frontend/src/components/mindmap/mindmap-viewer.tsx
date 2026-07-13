@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback } from "react";
+import { useState, useCallback } from "react";
+import { ChatBubble } from "@/components/chat/chat-bubble";
 import { MindMapTree } from "@/components/chat/mindmap-tree";
 import { formatAge } from "@/lib/format-age";
 
@@ -23,8 +24,10 @@ type MindmapViewerProps = {
 };
 
 export function MindmapViewer({ mindmap, onBack, onRegenerate, onDelete }: MindmapViewerProps) {
+  const [prefillInput, setPrefillInput] = useState<string | null>(null);
+
   const handleAskInChat = useCallback((name: string) => {
-    window.location.href = `/knowledge/chat?input=${encodeURIComponent(`Explain about "${name}"`)}`;
+    setPrefillInput(`Explain about "${name}"`);
   }, []);
 
   const handleNodeClick = useCallback((node: { name: string; page_slug?: string }) => {
@@ -67,6 +70,13 @@ export function MindmapViewer({ mindmap, onBack, onRegenerate, onDelete }: Mindm
           metadata={{ pageCount: mindmap.wiki_page_count, generatedAt: mindmap.generated_at }}
         />
       </div>
+
+      <ChatBubble
+        scopeType={mindmap.scope_type}
+        scopeId={mindmap.scope_id}
+        prefillInput={prefillInput}
+        onPrefillConsumed={() => setPrefillInput(null)}
+      />
     </div>
   );
 }
