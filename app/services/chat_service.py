@@ -13,8 +13,17 @@ def _make_title(text: str) -> str:
     return text.strip()[:60]
 
 
-async def create_session(db: AsyncSession, employee_id: uuid.UUID) -> ChatSession:
-    session = ChatSession(employee_id=employee_id)
+async def create_session(
+    db: AsyncSession,
+    employee_id: uuid.UUID,
+    scope_type: Optional[str] = None,
+    scope_id: Optional[uuid.UUID] = None,
+) -> ChatSession:
+    session = ChatSession(
+        employee_id=employee_id,
+        scope_type=scope_type,
+        scope_id=scope_id,
+    )
     db.add(session)
     await db.flush()
     await db.refresh(session)
@@ -22,7 +31,11 @@ async def create_session(db: AsyncSession, employee_id: uuid.UUID) -> ChatSessio
 
 
 async def list_sessions(
-    db: AsyncSession, employee_id: uuid.UUID, limit: int = 100
+    db: AsyncSession,
+    employee_id: uuid.UUID,
+    limit: int = 100,
+    scope_type: Optional[str] = None,
+    scope_id: Optional[uuid.UUID] = None,
 ) -> list[ChatSession]:
     # Prune empty sessions (no messages) before listing.
     empty_ids = (
@@ -40,6 +53,10 @@ async def list_sessions(
         .order_by(ChatSession.updated_at.desc())
         .limit(limit)
     )
+    if scope_type is not None:
+        stmt = stmt.where(ChatSession.scope_type == scope_type)
+    if scope_id is not None:
+        stmt = stmt.where(ChatSession.scope_id == scope_id)
     result = await db.execute(stmt)
     return list(result.scalars().all())
 

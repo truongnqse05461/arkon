@@ -41,3 +41,21 @@ async def test_set_title_short_message():
     from app.services.chat_service import _make_title
     result = _make_title("What is the leave policy?")
     assert result == "What is the leave policy?"
+
+
+@pytest.mark.asyncio
+async def test_create_session_with_scope():
+    from app.services.chat_service import create_session
+    db = AsyncMock()
+    employee_id = uuid.uuid4()
+    scope_id = uuid.uuid4()
+    db.flush = AsyncMock()
+    db.refresh = AsyncMock()
+    with patch("app.services.chat_service.ChatSession") as MockSession:
+        mock_instance = MagicMock()
+        MockSession.return_value = mock_instance
+        result = await create_session(db, employee_id, scope_type="department", scope_id=scope_id)
+        MockSession.assert_called_once_with(
+            employee_id=employee_id, scope_type="department", scope_id=scope_id
+        )
+        db.add.assert_called_once_with(mock_instance)
