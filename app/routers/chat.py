@@ -46,6 +46,11 @@ class CreateSessionResponse(BaseModel):
     created_at: str
 
 
+class CreateSessionRequest(BaseModel):
+    scope_type: Optional[str] = None
+    scope_id: Optional[uuid.UUID] = None
+
+
 class MessageResponse(BaseModel):
     id: uuid.UUID
     role: str
@@ -93,10 +98,12 @@ class StreamRequest(BaseModel):
 
 @router.get("/chat/sessions", response_model=list[SessionResponse])
 async def list_chat_sessions(
+    scope_type: Optional[str] = None,
+    scope_id: Optional[uuid.UUID] = None,
     db: AsyncSession = Depends(get_db),
     user: Employee = Depends(get_current_user),
 ):
-    sessions = await list_sessions(db, user.id)
+    sessions = await list_sessions(db, user.id, scope_type=scope_type, scope_id=scope_id)
     await db.commit()
 
     if not sessions:
@@ -123,10 +130,13 @@ async def list_chat_sessions(
 
 @router.post("/chat/sessions", response_model=CreateSessionResponse)
 async def create_chat_session(
+    req: Optional[CreateSessionRequest] = None,
     db: AsyncSession = Depends(get_db),
     user: Employee = Depends(get_current_user),
 ):
-    session = await create_session(db, user.id)
+    scope_type = req.scope_type if req else None
+    scope_id = req.scope_id if req else None
+    session = await create_session(db, user.id, scope_type=scope_type, scope_id=scope_id)
     await db.commit()
     return CreateSessionResponse(
         id=session.id,
