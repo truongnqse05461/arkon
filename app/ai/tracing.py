@@ -1,12 +1,16 @@
 import os
+import types
 
 import litellm
 
-# Compat: langfuse 4.x removed `langfuse.version`; litellm still references it.
+# Compat: langfuse 4.x removed `langfuse.version` submodule; litellm references
+# `langfuse.version.__version__`. Create a stub module so litellm can read it.
 try:
     import langfuse as _langfuse
-    if not hasattr(_langfuse, "version"):
-        _langfuse.version = _langfuse.__version__
+    if not hasattr(_langfuse, "version") or isinstance(_langfuse.version, str):
+        _v = types.ModuleType("langfuse.version")
+        _v.__version__ = _langfuse.__version__
+        _langfuse.version = _v
 except ImportError:
     pass
 
