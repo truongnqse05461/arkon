@@ -2,11 +2,11 @@ import os
 
 import litellm
 
-# Monkey-patch: litellm expects langfuse.version but langfuse>=4 uses __version__
+# Compat: langfuse 4.x removed `langfuse.version`; litellm still references it.
 try:
-    import langfuse
-    if not hasattr(langfuse, "version") and hasattr(langfuse, "__version__"):
-        langfuse.version = langfuse.__version__
+    import langfuse as _langfuse
+    if not hasattr(_langfuse, "version"):
+        _langfuse.version = _langfuse.__version__
 except ImportError:
     pass
 
