@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useChat } from "ai/react";
 import type { UIMessage, Message } from "ai";
 import { api } from "@/lib/api";
@@ -36,8 +36,23 @@ export function ChatBubble({
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [input, setInput] = useState("");
   const [attachments] = useState<Attachment[]>([]);
+  const pendingSubmitRef = useRef(false);
+
+  // useChat hook — manages input state internally
+  const { messages, input, setInput, handleSubmit, isLoading } = useChat({
+    api: activeSessionId
+      ? `${API_BASE}/api/chat/sessions/${activeSessionId}/stream`
+      : `${API_BASE}/api/chat/sessions/placeholder/stream`,
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: {
+      attachments: attachments.map(({ label: _label, ...rest }) => rest),
+    },
+    initialMessages: initialMessages as unknown as Message[],
+    onFinish: () => {
+      fetchSessions();
+    },
+  });
 
   // Fetch sessions when bubble opens
   const fetchSessions = useCallback(async () => {
@@ -58,29 +73,14 @@ export function ChatBubble({
     if (isOpen) fetchSessions();
   }, [isOpen, fetchSessions]);
 
-  // Handle prefill: open bubble and set input
+  // Handle prefill: open bubble and set input via useChat's setInput
   useEffect(() => {
     if (prefillInput) {
       setIsOpen(true);
       setInput(prefillInput);
       onPrefillConsumed();
     }
-  }, [prefillInput, onPrefillConsumed]);
-
-  // useChat hook for active session
-  const { messages, handleSubmit, isLoading } = useChat({
-    api: activeSessionId
-      ? `${API_BASE}/api/chat/sessions/${activeSessionId}/stream`
-      : `${API_BASE}/api/chat/sessions/placeholder/stream`,
-    headers: { Authorization: `Bearer ${getToken()}` },
-    body: {
-      attachments: attachments.map(({ label: _label, ...rest }) => rest),
-    },
-    initialMessages: initialMessages as unknown as Message[],
-    onFinish: () => {
-      fetchSessions();
-    },
-  });
+  }, [prefillInput, onPrefillConsumed, setInput]);
 
   const handleNewSession = useCallback(async () => {
     try {
@@ -91,7 +91,7 @@ export function ChatBubble({
       setSessions((prev) => [s, ...prev]);
       setActiveSessionId(s.id);
       setInitialMessages([]);
-      setInput("");
+      // Don't clear input — we need it for auto-submit
     } catch {
       // ignore
     }
@@ -145,29 +145,27 @@ export function ChatBubble({
   const handleSend = useCallback(() => {
     if (!input.trim() || isLoading) return;
     if (!activeSessionId) {
+      // Mark that we want to submit after session is created
+      pendingSubmitRef.current = true;
       handleNewSession();
       return;
     }
     handleSubmit({});
   }, [input, isLoading, activeSessionId, handleSubmit, handleNewSession]);
 
-  // Auto-submit after session creation when prefill triggered new session
+  // Auto-submit after session is created (when pendingSubmitRef is set)
   useEffect(() => {
-    if (
-      activeSessionId &&
-      input.trim() &&
-      !isLoading &&
-      messages.length === 0
-    ) {
+    if (activeSessionId && pendingSubmitRef.current && input.trim()) {
+      pendingSubmitRef.current = false;
       handleSubmit({});
     }
-  }, [activeSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeSessionId, input, handleSubmit]);
 
   const handleBack = useCallback(() => {
     setActiveSessionId(null);
     setInitialMessages([]);
     setInput("");
-  }, []);
+  }, [setInput]);
 
   return (
     <>
