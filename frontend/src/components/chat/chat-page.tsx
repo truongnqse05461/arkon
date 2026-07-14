@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import type { UIMessage } from "ai";
 import { api } from "@/lib/api";
 import { SessionPanel, type ChatSession } from "./session-panel";
@@ -29,23 +30,23 @@ function recordsToUIMessages(records: MessageRecord[]): UIMessage[] {
 }
 
 export function ChatPage() {
+  const searchParams = useSearchParams();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const didAutoSelect = useRef(false);
 
   const fetchSessions = useCallback(async () => {
     try {
       const data = await api<ChatSession[]>("/api/chat/sessions");
       setSessions(data);
+      return data;
     } catch {
       setSessions([]);
+      return [];
     }
   }, []);
-
-  useEffect(() => {
-    fetchSessions();
-  }, [fetchSessions]);
 
   const selectSession = useCallback(async (id: string) => {
     setActiveSessionId(id);
@@ -59,6 +60,24 @@ export function ChatPage() {
       setLoadingMessages(false);
     }
   }, []);
+
+  // Load sessions on mount
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
+
+  // Auto-select session from ?session= query param (once)
+  useEffect(() => {
+    const sessionId = searchParams.get("session");
+    if (!sessionId || didAutoSelect.current) return;
+    didAutoSelect.current = true;
+    fetchSessions().then((loaded) => {
+      const found = loaded.find((s) => s.id === sessionId);
+      if (found) {
+        selectSession(sessionId);
+      }
+    });
+  }, [searchParams, fetchSessions, selectSession]);
 
   const newSession = useCallback(async () => {
     try {
