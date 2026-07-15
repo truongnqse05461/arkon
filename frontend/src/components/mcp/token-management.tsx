@@ -4,7 +4,11 @@ import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
-export function TokenManagement() {
+interface TokenManagementProps {
+  onTokenGenerated?: (token: string | null) => void;
+}
+
+export function TokenManagement({ onTokenGenerated }: TokenManagementProps) {
   const [hasToken, setHasToken] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -26,6 +30,7 @@ export function TokenManagement() {
       setToken(data.token);
       setHasToken(true);
       setShowToken(true);
+      onTokenGenerated?.(data.token);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to generate token");
     } finally {
@@ -40,6 +45,7 @@ export function TokenManagement() {
       setToken(null);
       setHasToken(false);
       setShowToken(false);
+      onTokenGenerated?.(null);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to revoke token");
     }
