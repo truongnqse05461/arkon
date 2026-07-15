@@ -71,6 +71,7 @@ const navSections: NavSection[] = [
     items: [
       { label: "Statistics", href: "/admin/statistics", icon: "analytics", requiredPermissions: ["org:settings:manage"] },
       { label: "Audit Log", href: "/audit", icon: "policy", requiredPermissions: ["org:audit:read"] },
+      { label: "MCP Integration", href: "/mcp", icon: "hub" },
       { label: "Settings", href: "/settings", icon: "settings", requiredPermissions: ["org:settings:read"] },
     ],
   },
