@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { McpTokenCard } from "@/components/profile/mcp-token-card";
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
@@ -149,10 +148,7 @@ export default function ProfilePage() {
           </form>
         </div>
 
-        {/* MCP Token (self-service) */}
-        <div className="lg:col-span-2">
-          <McpTokenCard />
-        </div>
+
       </div>
     </>
   );
