@@ -14,7 +14,7 @@ export function TokenManagement() {
   useEffect(() => {
     api<{ has_token: boolean }>("/api/my/mcp-token/status")
       .then((data) => setHasToken(data.has_token))
-      .catch(() => {});
+      .catch((err) => console.warn("Failed to check MCP token status:", err));
   }, []);
 
   const handleGenerate = async () => {
