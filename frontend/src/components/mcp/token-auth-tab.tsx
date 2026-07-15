@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { MCP_SERVER_URL } from "@/lib/mcp-constants";
 import { AgentConfigCard } from "./agent-config-card";
 import { QuickStart } from "./quick-start";
 
@@ -11,10 +12,6 @@ type Agent = {
   config: string;
   description: string;
 };
-
-const MCP_URL = typeof window !== "undefined"
-  ? `${window.location.origin}/mcp`
-  : "http://localhost:8000/mcp";
 
 function buildAgents(token: string): Agent[] {
   const bearer = `Bearer ${token}`;
@@ -28,7 +25,7 @@ function buildAgents(token: string): Agent[] {
           mcpServers: {
             arkon: {
               type: "url",
-              url: MCP_URL,
+              url: MCP_SERVER_URL,
               headers: { Authorization: bearer },
             },
           },
@@ -45,7 +42,7 @@ function buildAgents(token: string): Agent[] {
         {
           mcpServers: {
             arkon: {
-              url: MCP_URL,
+              url: MCP_SERVER_URL,
               headers: { Authorization: bearer },
             },
           },
@@ -62,7 +59,7 @@ function buildAgents(token: string): Agent[] {
         {
           mcpServers: {
             arkon: {
-              url: MCP_URL,
+              url: MCP_SERVER_URL,
               headers: { Authorization: bearer },
             },
           },
@@ -75,7 +72,7 @@ function buildAgents(token: string): Agent[] {
     {
       id: "generic",
       label: "Generic",
-      config: `URL:    ${MCP_URL}\nHeader: ${bearer}`,
+      config: `URL:    ${MCP_SERVER_URL}\nHeader: ${bearer}`,
       description: "Any MCP-compatible client — use URL and header directly",
     },
   ];

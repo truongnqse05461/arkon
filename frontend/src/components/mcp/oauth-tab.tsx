@@ -2,11 +2,8 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { MCP_SERVER_URL } from "@/lib/mcp-constants";
 import { AgentConfigCard } from "./agent-config-card";
-
-const MCP_URL = typeof window !== "undefined"
-  ? `${window.location.origin}/mcp`
-  : "http://localhost:8000/mcp";
 
 export function OAuthTab() {
   const [authStatus, setAuthStatus] = useState<"idle" | "authorizing">("idle");
@@ -15,7 +12,7 @@ export function OAuthTab() {
     {
       mcpServers: {
         arkon: {
-          url: MCP_URL,
+          url: MCP_SERVER_URL,
         },
       },
     },

@@ -20,6 +20,9 @@ export function AgentConfigCard({ label, config, description }: AgentConfigCardP
 
   return (
     <div className="space-y-2">
+      {label && (
+        <p className="text-sm font-medium text-foreground">{label}</p>
+      )}
       {description && (
         <p className="text-xs text-muted-foreground">{description}</p>
       )}
